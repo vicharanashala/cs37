@@ -1,36 +1,131 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 🎯 Samagama FAQ Portal
 
-## Getting Started
+> AI-powered FAQ portal for the Vicharanashala Internship Programme at IIT Ropar
 
-First, run the development server:
+[![Next.js](https://img.shields.io/badge/Next.js-16-black?logo=next.js)](https://nextjs.org)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5-blue?logo=typescript)](https://typescriptlang.org)
+[![Tailwind CSS](https://img.shields.io/badge/Tailwind-4-38bdf8?logo=tailwindcss)](https://tailwindcss.com)
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+## ✨ Features
+
+- **🔍 Semantic Search** — Fuzzy search that understands intent, not just keywords
+- **🎙️ Voice Search** — Ask questions by speaking (Web Speech API)
+- **🤖 Yaksha Chat** — AI-powered assistant that answers from the FAQ knowledge base
+- **💡 Smart Duplicate Detection** — Real-time suggestions when asking a question
+- **📱 Mobile-First** — Responsive design that works on all devices
+- **⚡ Fast** — Static generation + client-side search = instant results
+- **🎨 Beautiful UI** — Dark theme with smooth Framer Motion animations
+- **👍 Feedback System** — Upvote/downvote answers to improve quality
+
+## 🏗️ Architecture
+
+```
+┌─────────────────────────────────────────┐
+│           Client (Browser)               │
+├─────────────────────────────────────────┤
+│  FAQ Page → Search + Browse + Filter     │
+│  Ask Page → Submit + Duplicate Detection │
+│  Resolve Page → Admin Answer Panel       │
+│  Yaksha Chat → AI Q&A from FAQ data      │
+├─────────────────────────────────────────┤
+│  Fuse.js (Client-side fuzzy search)      │
+│  Framer Motion (Animations)              │
+│  Web Speech API (Voice input)            │
+└─────────────────────────────────────────┘
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## 🚀 Getting Started
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+# Clone the repository
+git clone https://github.com/starfury9/Samagama-FAQ-Portal.git
+cd Samagama-FAQ-Portal
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+# Install dependencies
+npm install
 
-## Learn More
+# Run development server
+npm run dev
 
-To learn more about Next.js, take a look at the following resources:
+# Open http://localhost:3000
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## 📁 Project Structure
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```
+samagama-faq-portal/
+├── app/
+│   ├── page.tsx          # FAQ browsing page
+│   ├── ask/page.tsx      # Ask a question page
+│   ├── resolve/page.tsx  # Admin resolve page
+│   ├── layout.tsx        # Root layout
+│   └── globals.css       # Global styles
+├── src/
+│   ├── components/
+│   │   ├── Header.tsx         # Navigation header
+│   │   ├── SearchBar.tsx      # Search with voice input
+│   │   ├── FAQCard.tsx        # Individual FAQ card
+│   │   ├── CategoryFilter.tsx # Category filter pills
+│   │   └── YakshaChat.tsx     # AI chat assistant
+│   ├── data/
+│   │   └── faqData.ts         # FAQ content database
+│   ├── lib/
+│   │   └── utils.ts           # Utility functions
+│   └── types/
+│       └── speech.d.ts        # Web Speech API types
+├── package.json
+├── tsconfig.json
+├── next.config.ts
+└── tailwind.config.ts (v4 - via postcss)
+```
 
-## Deploy on Vercel
+## 🛠️ Tech Stack
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+| Technology | Purpose |
+|-----------|---------|
+| Next.js 16 | Framework (App Router, SSG) |
+| React 19 | UI Components |
+| TypeScript 5 | Type Safety |
+| Tailwind CSS 4 | Styling |
+| Framer Motion | Animations |
+| Fuse.js | Fuzzy Search |
+| Lucide React | Icons |
+| Web Speech API | Voice Input |
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## 📄 Pages
+
+### 1. FAQ Page (`/`)
+- Hero search bar with voice input
+- Category filter pills (horizontal scroll)
+- Expandable FAQ cards with highlighting
+- Upvote/downvote feedback
+- Share individual FAQ links
+
+### 2. Ask a Question (`/ask`)
+- Real-time duplicate detection as you type
+- Category selection
+- Priority levels (Normal/Urgent)
+- Email notification field
+- Success confirmation
+
+### 3. Resolve Questions (`/resolve`)
+- Admin dashboard with stats
+- Filter by status (All/Pending/Urgent)
+- AI-suggested answers
+- Resolve or reject actions
+- Split-panel layout
+
+### 4. Yaksha Chat (floating)
+- Available on all pages
+- Answers from FAQ knowledge base
+- Shows source citations
+- Typing indicators
+- Conversation history
+
+## 👥 Team
+
+Built as part of the Vicharanashala Internship Programme, IIT Ropar — 2026 Cycle.
+
+## 📜 License
+
+MIT
