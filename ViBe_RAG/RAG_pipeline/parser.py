@@ -75,7 +75,7 @@ def load_soup(name: str) -> BeautifulSoup:
     In production you can also skip live fetch entirely and always use
     the cache — just set FORCE_LOCAL = True.
     """
-    FORCE_LOCAL = True   # flip to True to always use local cache
+    FORCE_LOCAL = False  # set to True to skip live fetch and use local cache only
 
     url        = PAGES[name]
     local_path = LOCAL_HTML[name]
