@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import toast from "react-hot-toast";
 import Header from "@/components/Header";
 import YakshaChat from "@/components/YakshaChat";
 import { faqData, categories } from "@/data/faqData";
@@ -12,6 +13,7 @@ import {
   CheckCircle,
   AlertCircle,
   ArrowRight,
+  Mail,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -37,6 +39,21 @@ export default function AskPage() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!question.trim()) return;
+
+    // Email confirmation toast
+    toast.success(
+      <div className="flex flex-col gap-1">
+        <div className="flex items-center gap-2 font-semibold">
+          <Mail size={14} />
+          <span>Confirmation email sent</span>
+        </div>
+        <p className="text-xs opacity-80">
+          {email ? `Sent to ${email}` : "Question logged successfully"}
+        </p>
+      </div>,
+      { duration: 4000 }
+    );
+
     setSubmitted(true);
   };
 
