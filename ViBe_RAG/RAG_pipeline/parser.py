@@ -1,17 +1,17 @@
 """
 scrape_and_clean.py
 ────────────────────────────────────────────────────────────────────────────
-Step 1 + Step 2: Scrape → Clean → Structured JSON
+Step 1 + Step 2: Scrape -> Clean -> Structured JSON
 ────────────────────────────────────────────────────────────────────────────
 
 Strategy
   1. Try to fetch live from the URL (requests + User-Agent spoofing).
   2. If the server returns 4xx/5xx or is unreachable, fall back to a local
      cached HTML file in  data/raw_html/<name>.html
-     → In your CI/CD, save the raw HTML once (curl / Playwright), commit it,
+     -> In your CI/CD, save the raw HTML once (curl / Playwright), commit it,
        and the rest of the pipeline is reproducible without live network.
 
-Output  →  data/raw_documents.json
+Output  ->  data/raw_documents.json
 Format per document:
   {
     "doc_id":   "faq_1_1",
@@ -73,7 +73,7 @@ def load_soup(name: str) -> BeautifulSoup:
     """
     Try live fetch first; fall back to local cached HTML.
     In production you can also skip live fetch entirely and always use
-    the cache — just set FORCE_LOCAL = True.
+    the cache - just set FORCE_LOCAL = True.
     """
     FORCE_LOCAL = False  # set to True to skip live fetch and use local cache only
 
@@ -88,7 +88,7 @@ def load_soup(name: str) -> BeautifulSoup:
             # Save the raw HTML for reproducibility
             os.makedirs(os.path.dirname(local_path), exist_ok=True)
             Path(local_path).write_text(r.text, encoding="utf-8")
-            print(f"  [cache] saved → {local_path}")
+            print(f"  [cache] saved -> {local_path}")
             return BeautifulSoup(r.text, "html.parser")
         except Exception as exc:
             print(f"  [warn]  live fetch failed ({exc}), using local cache")
@@ -143,7 +143,7 @@ def parse_overview(soup: BeautifulSoup) -> list[Document]:
             doc_id  = "overview_intro",
             source  = "overview",
             section = "Overview",
-            title   = "Vicharanashala Internship — Introduction",
+            title   = "Vicharanashala Internship - Introduction",
             content = clean_text("\n\n".join(intro_parts)),
             url     = base,
             type    = "prose",
@@ -184,7 +184,7 @@ def parse_overview(soup: BeautifulSoup) -> list[Document]:
 def parse_faq(soup: BeautifulSoup) -> list[Document]:
     """
     Convert each h2 section of the FAQ page into one prose Document.
-    The FAQ has 13 numbered h2 sections (1–13), excluding the ToC heading.
+    The FAQ has 13 numbered h2 sections (1-13), excluding the ToC heading.
     """
     docs: list[Document] = []
     base = PAGES["faq"]
@@ -255,13 +255,13 @@ def main():
     # Warn about empty docs
     empty = [d for d in all_docs if not d.content]
     if empty:
-        print(f"  ⚠  {len(empty)} documents with empty content — check parser")
+        print(f"  ⚠  {len(empty)} documents with empty content - check parser")
 
     # Save
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         json.dump([asdict(d) for d in all_docs], f, ensure_ascii=False, indent=2)
 
-    print(f"\n✓ Saved → {OUTPUT_FILE}")
+    print(f"\n[OK] Saved -> {OUTPUT_FILE}")
 
     # Preview
     print("\n── Sample output ───────────────────────────────────────")
