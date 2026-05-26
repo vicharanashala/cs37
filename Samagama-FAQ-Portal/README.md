@@ -1,4 +1,4 @@
-# 🎯 Samagama FAQ Portal
+# 🎯 Samagama FAQ Portal 
 
 > AI-powered FAQ portal for the Vicharanashala Internship Programme at IIT Ropar
 
