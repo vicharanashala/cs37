@@ -5,19 +5,19 @@ Step 3: Chunking
 ────────────────────────────────────────────────────────────────────────────
 
 Strategy:
-  - "qa"    docs  →  already one Q+A pair = one chunk (no splitting needed
+  - "qa"    docs  ->  already one Q+A pair = one chunk (no splitting needed
                       unless the answer is very long > MAX_TOKENS)
-  - "prose" docs  →  sliding window split with OVERLAP tokens of context
+  - "prose" docs  ->  sliding window split with OVERLAP tokens of context
 
 Why this matters for RAG quality:
-  Too small  → retrieved chunk lacks enough context to answer the question
-  Too large  → embedding is diluted; irrelevant content drags down similarity
+  Too small  -> retrieved chunk lacks enough context to answer the question
+  Too large  -> embedding is diluted; irrelevant content drags down similarity
 
 Gemini text-embedding-004 max input: 2048 tokens
 Safe chunk target: 400 tokens (leaves room for the query in the prompt)
 Overlap: 60 tokens (~15%) so no idea gets cut at a boundary
 
-Output → data/chunks.json
+Output -> data/chunks.json
 Each chunk:
   {
     "chunk_id":   "faq_3_7_c0",
@@ -25,7 +25,7 @@ Each chunk:
     "source":     "faq",
     "section":    "3. NOC (No Objection Certificate)",
     "title":      "3.7 Can my HOD email the NOC...",
-    "content":    "Yes — there is a fully-equivalent...",
+    "content":    "Yes - there is a fully-equivalent...",
     "url":        "https://samagama.in/...",
     "type":       "qa",
     "chunk_index": 0,
@@ -47,7 +47,7 @@ OUTPUT_FILE = "data/chunks.json"
 
 MAX_TOKENS  = 400   # target max tokens per chunk
 OVERLAP     = 60    # token overlap between consecutive chunks
-# Gemini text-embedding-004 hard limit — never exceed this
+# Gemini text-embedding-004 hard limit - never exceed this
 GEMINI_MAX  = 2048
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -85,7 +85,7 @@ def sliding_window_chunks(
     """
     Split text into overlapping token windows.
 
-    1. Split into sentences (atomic units — we never cut mid-sentence).
+    1. Split into sentences (atomic units - we never cut mid-sentence).
     2. Greedily pack sentences into a window until max_tokens is reached.
     3. Slide forward by (window_tokens - overlap) for the next window.
     """
@@ -100,7 +100,7 @@ def sliding_window_chunks(
     for sent in sentences:
         sent_tokens = count_tokens(sent)
 
-        # Single sentence longer than max → force it as its own chunk
+        # Single sentence longer than max -> force it as its own chunk
         if sent_tokens > max_tokens:
             if current:
                 chunks.append(" ".join(current))
@@ -154,8 +154,8 @@ class Chunk:
 def chunk_document(doc: dict) -> list[Chunk]:
     """
     Decide chunking strategy per document type:
-      - qa    → if short enough, 1 chunk; else sliding window on answer only
-      - prose → sliding window
+      - qa    -> if short enough, 1 chunk; else sliding window on answer only
+      - prose -> sliding window
     Both prepend "Q: <title>\nA: " to QA chunks so the embedding captures
     the question context alongside the answer.
     """
@@ -186,7 +186,7 @@ def chunk_document(doc: dict) -> list[Chunk]:
             token_count  = total_tokens,
         )]
 
-    # Needs splitting — run sliding window on the content part only
+    # Needs splitting - run sliding window on the content part only
     windows = sliding_window_chunks(doc["content"], MAX_TOKENS, OVERLAP)
     chunks: list[Chunk] = []
 
@@ -244,14 +244,14 @@ def main():
     if multi_chunk_docs:
         print(f"\n  Documents split into multiple chunks:")
         for doc_id, n in multi_chunk_docs:
-            print(f"    {doc_id}  →  {n} chunks")
+            print(f"    {doc_id}  -> {n} chunks")
 
     # ── Save ──────────────────────────────────────────────────────────
     os.makedirs("data", exist_ok=True)
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         json.dump([asdict(c) for c in all_chunks], f, ensure_ascii=False, indent=2)
 
-    print(f"\n✓ Saved → {OUTPUT_FILE}")
+    print(f"\n[OK] Saved -> {OUTPUT_FILE}")
 
     # ── Preview ───────────────────────────────────────────────────────
     print("\n── Sample chunks ───────────────────────────────────────")
