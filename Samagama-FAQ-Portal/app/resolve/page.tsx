@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import toast from "react-hot-toast";
 import Header from "@/components/Header";
 import {
   CheckCircle,
@@ -12,6 +13,7 @@ import {
   Send,
   Filter,
   Sparkles,
+  Mail,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -93,17 +95,48 @@ export default function ResolvePage() {
   });
 
   const handleResolve = (id: string) => {
+    const question = questions.find((q) => q.id === id);
     setQuestions((prev) =>
       prev.map((q) => (q.id === id ? { ...q, status: "resolved" as const } : q))
     );
+
+    // Email notification simulation
+    toast.success(
+      <div className="flex flex-col gap-1">
+        <div className="flex items-center gap-2 font-semibold">
+          <Mail size={14} />
+          <span>Email sent successfully</span>
+        </div>
+        <p className="text-xs opacity-80">
+          Notification delivered to {question?.email}
+        </p>
+      </div>,
+      { duration: 4000 }
+    );
+
     setSelectedQuestion(null);
     setAnswer("");
   };
 
   const handleReject = (id: string) => {
+    const question = questions.find((q) => q.id === id);
     setQuestions((prev) =>
       prev.map((q) => (q.id === id ? { ...q, status: "rejected" as const } : q))
     );
+
+    toast.error(
+      <div className="flex flex-col gap-1">
+        <div className="flex items-center gap-2 font-semibold">
+          <Mail size={14} />
+          <span>Question rejected</span>
+        </div>
+        <p className="text-xs opacity-80">
+          User notified: {question?.email}
+        </p>
+      </div>,
+      { duration: 4000 }
+    );
+
     setSelectedQuestion(null);
     setAnswer("");
   };
