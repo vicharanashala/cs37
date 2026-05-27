@@ -105,7 +105,7 @@ load_dotenv()
 
 GEMINI_API_KEY   = os.getenv("GEMINI_API_KEY")
 EMBEDDING_MODEL  = "gemini-embedding-001"
-GENERATION_MODEL = "gemini-2.0-flash-lite"   # fast + free tier
+GENERATION_MODEL = "gemini-3.1-flash-lite"   # fast + free tier
 COLLECTION_NAME  = "samagama_internship"
 CHROMA_PATH      = "./chroma_db"
 
