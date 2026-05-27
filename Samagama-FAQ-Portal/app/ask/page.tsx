@@ -2,7 +2,6 @@
 
 import { useState, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import toast from "react-hot-toast";
 import Header from "@/components/Header";
 import YakshaChat from "@/components/YakshaChat";
 import { faqData, categories } from "@/data/faqData";
@@ -28,6 +27,8 @@ export default function AskPage() {
   const [category, setCategory] = useState("");
   const [email, setEmail] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
   const [priority, setPriority] = useState<"normal" | "urgent">("normal");
 
   // Real-time duplicate detection
@@ -36,25 +37,29 @@ export default function AskPage() {
     return fuse.search(question).slice(0, 3);
   }, [question]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!question.trim()) return;
+    setSubmitError("");
+    setSubmitting(true);
 
-    // Email confirmation toast
-    toast.success(
-      <div className="flex flex-col gap-1">
-        <div className="flex items-center gap-2 font-semibold">
-          <Mail size={14} />
-          <span>Confirmation email sent</span>
-        </div>
-        <p className="text-xs opacity-80">
-          {email ? `Sent to ${email}` : "Question logged successfully"}
-        </p>
-      </div>,
-      { duration: 4000 }
-    );
-
-    setSubmitted(true);
+    try {
+      const res = await fetch("/api/ask", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: question.trim(), category, email, priority }),
+      });
+      const data = await res.json().catch(() => ({ ok: false }));
+      if (data.ok) {
+        setSubmitted(true);
+      } else {
+        setSubmitError(data.error?.message ?? "Something went wrong. Please try again.");
+      }
+    } catch {
+      setSubmitError("Network error. Please check your connection and try again.");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   if (submitted) {
@@ -97,6 +102,7 @@ export default function AskPage() {
                 setSubmitted(false);
                 setQuestion("");
                 setCategory("");
+                setSubmitError("");
               }}
               className="px-5 py-2.5 rounded-xl bg-accent text-background font-medium hover:bg-accent-hover transition-colors"
             >
@@ -267,19 +273,27 @@ export default function AskPage() {
               </div>
             </div>
 
+            {/* Error banner */}
+            {submitError && (
+              <div className="flex items-center gap-2 text-sm text-danger bg-danger/10 border border-danger/30 rounded-xl px-4 py-3">
+                <AlertCircle size={16} />
+                {submitError}
+              </div>
+            )}
+
             {/* Submit */}
             <button
               type="submit"
-              disabled={!question.trim()}
+              disabled={!question.trim() || submitting}
               className={cn(
                 "w-full flex items-center justify-center gap-2 py-3.5 rounded-xl font-medium text-sm transition-all",
-                question.trim()
+                question.trim() && !submitting
                   ? "bg-accent text-background hover:bg-accent-hover shadow-lg shadow-accent/20"
                   : "bg-card text-muted border border-border cursor-not-allowed"
               )}
             >
               <Send size={16} />
-              Submit Question
+              {submitting ? "Submitting…" : "Submit Question"}
             </button>
           </motion.form>
 

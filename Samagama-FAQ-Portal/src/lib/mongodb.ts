@@ -3,9 +3,14 @@
  *
  * Singleton Mongoose connection for Next.js App Router.
  *
- * Next.js 16 (App Router) runs in a Node.js environment where the module
+ * Next.js App Router runs in a Node.js environment where the module
  * cache persists across hot-reloads in development. We attach the cached
  * promise to `globalThis` so repeated imports don't open multiple connections.
+ *
+ * This file is used by all Mongoose model-based API routes (community Q&A,
+ * admin, AI review, etc.). Do NOT replace this with the native MongoClient —
+ * Mongoose models require a Mongoose connection. See mongoClient.ts for the
+ * native driver singleton used by /api/ask.
  */
 
 import mongoose from "mongoose";
@@ -51,8 +56,6 @@ export async function connectDB(): Promise<typeof mongoose> {
     cached.promise = mongoose
       .connect(MONGODB_URI, {
         bufferCommands: false,
-        // Use the new connection string parser (default in Mongoose 7+)
-        // and avoid deprecation warnings.
         serverSelectionTimeoutMS: 10_000,
       })
       .then((m) => m);

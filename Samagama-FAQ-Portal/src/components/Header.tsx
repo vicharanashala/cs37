@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { MessageCircle, HelpCircle, CheckCircle, Menu, X, MessageSquare } from "lucide-react";
+import { MessageCircle, HelpCircle, CheckCircle, Menu, X, MessageSquare, User } from "lucide-react";
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -11,6 +11,8 @@ const navLinks = [
   { href: "/", label: "FAQ", icon: HelpCircle },
   { href: "/ask", label: "Ask", icon: MessageCircle },
   { href: "/threads", label: "Threads", icon: MessageSquare },
+  { href: "/community", label: "Community", icon: User },
+  { href: "/ask", label: "Ask a Question", icon: MessageCircle },
   { href: "/resolve", label: "Resolve", icon: CheckCircle },
 ];
 
