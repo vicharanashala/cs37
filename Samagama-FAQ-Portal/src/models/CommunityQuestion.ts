@@ -7,10 +7,29 @@
  * counters (approvedAnswerCount, voteScore, lastActivityAt) keep list/sort
  * queries cheap; they are recomputed by the community service when answers
  * change state.
+ *
+ * Lifecycle (with RAG gate):
+ *   submit → pending_rag  (stored, sent to FastAPI for validation)
+ *         → approved      (FastAPI approved — shown publicly as "open")
+ *         → rejected_by_rag (FastAPI rejected — kept for admin audit trail)
+ *         → open          (legacy / bypass path)
+ *   open  → closed | hidden | deleted  (admin actions)
  */
 
 import mongoose, { Document, Model, Schema, Types } from "mongoose";
 import { QUESTION_STATUS, type QuestionStatus } from "@/lib/community/constants";
+
+/** Sub-document written by the FastAPI RAG backend after /validate-question. */
+export interface IRagValidation {
+  /** "approved" | "rejected" as returned by FastAPI */
+  decision: "approved" | "rejected";
+  /** Human-readable reason / label from FastAPI */
+  reason: string;
+  /** Model/pipeline identifier reported by FastAPI */
+  model: string;
+  /** When the validation was recorded */
+  validatedAt: Date;
+}
 
 export interface ICommunityQuestion extends Document {
   institutionId: string;
@@ -23,6 +42,8 @@ export interface ICommunityQuestion extends Document {
   questionHash: string;
   tags: string[];
   status: QuestionStatus;
+  /** Populated by FastAPI after RAG validation; undefined while pending. */
+  ragValidation?: IRagValidation;
   acceptedAnswerId?: Types.ObjectId | null;
   approvedAnswerCount: number;
   viewCount: number;
@@ -31,6 +52,16 @@ export interface ICommunityQuestion extends Document {
   createdAt: Date;
   updatedAt: Date;
 }
+
+const RagValidationSchema = new Schema<IRagValidation>(
+  {
+    decision: { type: String, enum: ["approved", "rejected"], required: true },
+    reason:   { type: String, default: "" },
+    model:    { type: String, default: "" },
+    validatedAt: { type: Date, default: Date.now },
+  },
+  { _id: false }
+);
 
 const CommunityQuestionSchema = new Schema<ICommunityQuestion>(
   {
@@ -44,9 +75,11 @@ const CommunityQuestionSchema = new Schema<ICommunityQuestion>(
     status: {
       type: String,
       enum: QUESTION_STATUS as unknown as string[],
-      default: "open",
+      // New questions wait for RAG validation before going "open".
+      default: "pending_rag",
       index: true,
     },
+    ragValidation: { type: RagValidationSchema, default: undefined },
     acceptedAnswerId: {
       type: Schema.Types.ObjectId,
       ref: "CommunityAnswer",

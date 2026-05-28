@@ -58,7 +58,7 @@ export default function ResolvePage() {
   }, []);
 
   useEffect(() => {
-    loadQuestions();
+    void loadQuestions();
   }, [loadQuestions]);
 
   const filteredQuestions = questions.filter((q) => {

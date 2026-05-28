@@ -54,8 +54,26 @@ export const ANSWER_STATUS = [
 ] as const;
 export type AnswerStatus = (typeof ANSWER_STATUS)[number];
 
-/** Question lifecycle states. */
-export const QUESTION_STATUS = ["open", "closed", "hidden", "deleted"] as const;
+/**
+ * Question lifecycle states.
+ *
+ * pending_rag     → question saved, awaiting FastAPI /validate-question response
+ * approved        → FastAPI approved; shown publicly (treated as "open")
+ * rejected_by_rag → FastAPI rejected; hidden from public but kept for admin audit
+ * open            → legacy / admin-bypass state
+ * closed          → answered / resolved
+ * hidden          → admin-hidden
+ * deleted         → soft-deleted
+ */
+export const QUESTION_STATUS = [
+  "pending_rag",
+  "approved",
+  "rejected_by_rag",
+  "open",
+  "closed",
+  "hidden",
+  "deleted",
+] as const;
 export type QuestionStatus = (typeof QUESTION_STATUS)[number];
 
 /** Summary cache states. */

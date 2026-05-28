@@ -3,9 +3,20 @@
  *
  *   GET  /api/community/questions   — list/search/filter/sort the question feed
  *   POST /api/community/questions   — create a question (rate-limited, dedup'd)
+ *
+ * POST flow (with FastAPI RAG gate):
+ *   1. Validate input + deduplicate
+ *   2. Save question to MongoDB with status "pending_rag"
+ *   3. Return questionId + pending status to the client immediately
+ *   4. After response is sent (via Next.js after()), call FastAPI
+ *      POST /validate-question — FastAPI writes the result (approved /
+ *      rejected_by_rag) directly back to MongoDB, no round-trip needed here.
+ *
+ * If the FastAPI service is unavailable, the question stays "pending_rag"
+ * and admins can review it manually.
  */
 
-import type { NextRequest } from "next/server";
+import { after, type NextRequest } from "next/server";
 import { connectDB } from "@/lib/mongodb";
 import { CommunityQuestion } from "@/models";
 import type { ICommunityQuestion } from "@/models";
@@ -16,6 +27,7 @@ import { validateQuestion } from "@/lib/community/validation";
 import { normalizeTitle, questionHash } from "@/lib/community/text";
 import { serializeQuestion } from "@/lib/community/serialize";
 import { INSTITUTION_ID, RATE_LIMITS } from "@/lib/community/constants";
+import { validateQuestion as ragValidate } from "@/lib/ai/ragClient";
 
 export async function GET(req: NextRequest) {
   await connectDB();
@@ -28,7 +40,8 @@ export async function GET(req: NextRequest) {
 
   const filter: Record<string, unknown> = {
     institutionId: INSTITUTION_ID,
-    status: "open",
+    // Show questions approved by RAG, or legacy "open" questions.
+    status: { $in: ["approved", "open"] },
   };
   if (tag) filter.tags = tag;
   if (sort === "unanswered") filter.approvedAnswerCount = 0;
@@ -91,6 +104,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // Step 1: Save immediately as pending_rag so admins have a full audit trail.
   const doc = await CommunityQuestion.create({
     institutionId: INSTITUTION_ID,
     authorStudentId: student.studentId,
@@ -99,9 +113,39 @@ export async function POST(req: NextRequest) {
     normalizedTitle: normalizeTitle(v.value.title),
     questionHash: hash,
     tags: v.value.tags,
-    status: "open",
+    // Stays pending_rag until FastAPI calls back to MongoDB directly.
+    status: "pending_rag",
     lastActivityAt: new Date(),
   });
 
-  return created({ question: serializeQuestion(doc.toObject() as never) });
+  const questionId = String(doc._id);
+
+  // Step 2: After the HTTP response is sent, trigger FastAPI RAG validation.
+  // FastAPI writes the final status + ragValidation directly to MongoDB.
+  // This Next.js app does NOT poll or wait for the result.
+  after(async () => {
+    try {
+      await ragValidate({
+        question_id: questionId,
+        question_text: `${v.value.title}\n${v.value.body ?? ""}`.trim(),
+        category: v.value.tags?.[0],
+        institution_id: INSTITUTION_ID,
+      });
+    } catch (err) {
+      // Non-fatal — question stays pending_rag for manual admin review.
+      console.error(
+        `[questions/route] RAG validation fire failed for ${questionId}:`,
+        err
+      );
+    }
+  });
+
+  return created({
+    questionId,
+    status: "pending_rag",
+    message:
+      "Your question has been submitted and is being reviewed by our AI system. It will appear publicly once approved.",
+    question: serializeQuestion(doc.toObject() as never),
+  });
 }
+

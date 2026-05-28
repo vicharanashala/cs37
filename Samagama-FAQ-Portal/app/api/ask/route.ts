@@ -4,19 +4,23 @@
  *   POST /api/ask
  *
  * Accepts a question submitted from /ask, validates it, and persists it
- * into the `pending_questions` collection using the native MongoDB driver
- * (collection.insertOne()) — exactly as shown in the MongoDB documentation.
+ * into the `pending_questions` collection using the native MongoDB driver.
  *
- * The admin resolve page (/resolve) reads this collection and lets admins
- * answer, reject, or promote questions to the FAQ.
+ * Flow:
+ *   1. Validate + insert into MongoDB with status "pending"
+ *   2. Return { questionId, status: "pending" } immediately to the client
+ *   3. After response is sent, fire POST RAG_API/validate-question
+ *      FastAPI updates the document's status directly in MongoDB.
+ *      (approved / rejected_by_rag written by FastAPI, not by this route)
+ *
+ * The resolve page (/resolve) reads this collection and lets admins see
+ * all questions including pending_rag ones for the full audit trail.
  */
 
-import type { NextRequest } from "next/server";
+import { after, type NextRequest } from "next/server";
 import { created, errors, readJson } from "@/lib/api";
-import  ConnectDB  from "@/lib/mongoClient";
-
-/** The database name to use. Set MONGODB_DB in .env to override. */
-// const DB_NAME = process.env.MONGODB_DB ?? "samagama";
+import ConnectDB from "@/lib/mongoClient";
+import { validateQuestion as ragValidate } from "@/lib/ai/ragClient";
 
 export async function POST(req: NextRequest) {
   const body = await readJson<{
@@ -45,11 +49,7 @@ export async function POST(req: NextRequest) {
   const priority =
     body.priority === "urgent" ? ("urgent" as const) : ("normal" as const);
 
-  // ── Persist via native MongoDB driver (insertOne) ─────────────────────────
-  // Following the MongoDB Node.js driver documentation:
-  //   const client = await clientPromise;
-  //   const db = client.db("dbName");
-  //   await db.collection("collectionName").insertOne({ ... });
+  // ── Step 1: Persist via native MongoDB driver (insertOne) ─────────────────
   const client = await ConnectDB();
   const db = client.db("RAG_Project");
 
@@ -58,6 +58,7 @@ export async function POST(req: NextRequest) {
     category,
     email,
     priority,
+    // "pending" = received, not yet validated by RAG.
     status: "pending",
     answer: null,
     suggestedAnswer: null,
@@ -68,8 +69,33 @@ export async function POST(req: NextRequest) {
     updatedAt: new Date(),
   });
 
+  const questionId = String(result.insertedId);
+
+  // ── Step 2: Fire FastAPI RAG validation after the response is sent ─────────
+  // FastAPI will call MongoDB directly to update status → "approved" or
+  // "rejected_by_rag" and write ragValidation details. This app does not
+  // need to poll or wait.
+  after(async () => {
+    try {
+      await ragValidate({
+        question_id: questionId,
+        question_text: question,
+        category,
+        institution_id: process.env.INSTITUTION_ID ?? "iit-ropar-vicharanashala",
+      });
+    } catch (err) {
+      // Non-fatal — question stays "pending" for manual admin review.
+      console.error(
+        `[ask/route] RAG validation fire failed for question ${questionId}:`,
+        err
+      );
+    }
+  });
+
   return created({
-    id: String(result.insertedId),
-    message: "Your question has been submitted and will be reviewed shortly.",
+    questionId,
+    status: "pending",
+    message:
+      "Your question has been submitted. Our AI system is reviewing it — it will appear publicly once approved.",
   });
 }
