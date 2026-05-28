@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { MessageCircle, HelpCircle, CheckCircle, Menu, X, MessageSquare } from "lucide-react";
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import ThemeToggle from "@/components/ThemeToggle";
 
 const navLinks = [
   { href: "/", label: "FAQ", icon: HelpCircle },
@@ -60,21 +61,25 @@ export default function Header() {
             })}
           </nav>
 
-          {/* Version Badge */}
+          {/* Version Badge + Theme Toggle */}
           <div className="hidden md:flex items-center gap-3">
             <span className="text-xs text-muted bg-card px-2.5 py-1 rounded-full border border-border">
               v2.0.0
             </span>
+            <ThemeToggle />
           </div>
 
           {/* Mobile Menu Button */}
-          <button
-            onClick={() => setMobileOpen(!mobileOpen)}
-            className="md:hidden p-2 rounded-lg hover:bg-card transition-colors"
-            aria-label="Toggle menu"
-          >
-            {mobileOpen ? <X size={20} /> : <Menu size={20} />}
-          </button>
+          <div className="flex md:hidden items-center gap-2">
+            <ThemeToggle />
+            <button
+              onClick={() => setMobileOpen(!mobileOpen)}
+              className="p-2 rounded-lg hover:bg-card transition-colors"
+              aria-label="Toggle menu"
+            >
+              {mobileOpen ? <X size={20} /> : <Menu size={20} />}
+            </button>
+          </div>
         </div>
       </div>
 

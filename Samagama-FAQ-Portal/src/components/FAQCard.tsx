@@ -1,10 +1,20 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronDown, ThumbsUp, ThumbsDown, Share2, Clock } from "lucide-react";
+import {
+  ChevronDown,
+  ThumbsUp,
+  ThumbsDown,
+  Share2,
+  Clock,
+  Eye,
+  Star,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { FAQ } from "@/data/faqData";
+import { useEngagement } from "@/hooks/useEngagement";
+import toast from "react-hot-toast";
 
 interface FAQCardProps {
   faq: FAQ;
@@ -28,12 +38,71 @@ function highlightText(text: string, query: string) {
   );
 }
 
+function StarRating({ rating }: { rating: number }) {
+  const stars = Math.round((rating / 100) * 5);
+  return (
+    <div className="flex items-center gap-0.5">
+      {[1, 2, 3, 4, 5].map((i) => (
+        <Star
+          key={i}
+          size={11}
+          className={cn(
+            i <= stars
+              ? "fill-accent text-accent"
+              : "text-border fill-transparent"
+          )}
+        />
+      ))}
+      <span className="text-xs text-muted ml-1">
+        {rating > 0 ? `${rating}%` : ""}
+      </span>
+    </div>
+  );
+}
+
 export default function FAQCard({ faq, isOpen, onToggle, searchQuery }: FAQCardProps) {
-  const [helpful, setHelpful] = useState<"up" | "down" | null>(null);
+  const { upvote, downvote, trackShare, trackView, getEngagement, getTotalRating, mounted } =
+    useEngagement();
+
+  const engagement = getEngagement(faq.id);
+  const rating = getTotalRating(faq.id);
+  const userVoted = engagement.upvotes > 0 ? "up" : engagement.downvotes > 0 ? "down" : null;
+
+  // Track view when opened
+  useEffect(() => {
+    if (isOpen && mounted) {
+      trackView(faq.id);
+    }
+  }, [isOpen, faq.id, trackView, mounted]);
+
+  const handleShare = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(`${window.location.origin}/#faq-${faq.id}`);
+    trackShare(faq.id);
+    toast.success("Link copied to clipboard!", { duration: 2000 });
+  };
+
+  const handleUpvote = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (userVoted === "up") return;
+    upvote(faq.id);
+    toast.success("Thanks for your feedback!", { duration: 1500 });
+  };
+
+  const handleDownvote = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (userVoted === "down") return;
+    downvote(faq.id);
+    toast("We'll work on improving this answer", { duration: 1500 });
+  };
+
+  const totalUpvotes = faq.helpful + engagement.upvotes;
+  const totalDownvotes = faq.notHelpful + engagement.downvotes;
 
   return (
     <motion.div
       layout
+      id={`faq-${faq.id}`}
       className={cn(
         "rounded-xl border transition-all duration-200",
         isOpen
@@ -49,9 +118,16 @@ export default function FAQCard({ faq, isOpen, onToggle, searchQuery }: FAQCardP
         <span className="shrink-0 mt-0.5 text-xs font-mono text-accent bg-accent/10 px-2 py-0.5 rounded">
           {faq.id}
         </span>
-        <span className="flex-1 text-sm sm:text-base font-medium leading-relaxed">
-          {searchQuery ? highlightText(faq.question, searchQuery) : faq.question}
-        </span>
+        <div className="flex-1 min-w-0">
+          <span className="text-sm sm:text-base font-medium leading-relaxed">
+            {searchQuery ? highlightText(faq.question, searchQuery) : faq.question}
+          </span>
+          {!isOpen && rating > 0 && (
+            <div className="mt-1.5">
+              <StarRating rating={rating} />
+            </div>
+          )}
+        </div>
         <motion.span
           animate={{ rotate: isOpen ? 180 : 0 }}
           transition={{ duration: 0.2 }}
@@ -88,48 +164,49 @@ export default function FAQCard({ faq, isOpen, onToggle, searchQuery }: FAQCardP
                   ))}
                 </div>
 
+                {/* Engagement Stats */}
+                <div className="mt-4 flex items-center gap-4 text-xs text-muted">
+                  <span className="flex items-center gap-1">
+                    <Eye size={12} />
+                    {engagement.views} views
+                  </span>
+                  <span>·</span>
+                  <StarRating rating={rating} />
+                </div>
+
                 {/* Actions */}
-                <div className="mt-4 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
+                <div className="mt-3 flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
                     <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setHelpful(helpful === "up" ? null : "up");
-                      }}
+                      onClick={handleUpvote}
+                      disabled={userVoted === "up"}
                       className={cn(
                         "flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg transition-all",
-                        helpful === "up"
-                          ? "bg-success/20 text-success"
+                        userVoted === "up"
+                          ? "bg-success/20 text-success cursor-default"
                           : "text-muted hover:text-foreground hover:bg-background"
                       )}
                       aria-label="Mark as helpful"
                     >
                       <ThumbsUp size={14} />
-                      <span>{faq.helpful + (helpful === "up" ? 1 : 0)}</span>
+                      <span>{totalUpvotes}</span>
                     </button>
                     <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setHelpful(helpful === "down" ? null : "down");
-                      }}
+                      onClick={handleDownvote}
+                      disabled={userVoted === "down"}
                       className={cn(
                         "flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg transition-all",
-                        helpful === "down"
-                          ? "bg-danger/20 text-danger"
+                        userVoted === "down"
+                          ? "bg-danger/20 text-danger cursor-default"
                           : "text-muted hover:text-foreground hover:bg-background"
                       )}
                       aria-label="Mark as not helpful"
                     >
                       <ThumbsDown size={14} />
-                      <span>{faq.notHelpful + (helpful === "down" ? 1 : 0)}</span>
+                      <span>{totalDownvotes}</span>
                     </button>
                     <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        navigator.clipboard.writeText(
-                          `${window.location.origin}/#faq-${faq.id}`
-                        );
-                      }}
+                      onClick={handleShare}
                       className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg text-muted hover:text-foreground hover:bg-background transition-all"
                       aria-label="Share this FAQ"
                     >

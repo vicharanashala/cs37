@@ -8,6 +8,7 @@ import SearchBar from "@/components/SearchBar";
 import CategoryFilter from "@/components/CategoryFilter";
 import FAQCard from "@/components/FAQCard";
 import YakshaChat from "@/components/YakshaChat";
+import TrendingFAQs from "@/components/TrendingFAQs";
 import { faqData, categories } from "@/data/faqData";
 import { BookOpen, TrendingUp, Users } from "lucide-react";
 
@@ -51,6 +52,17 @@ export default function FAQPage() {
       }
       return next;
     });
+  }, []);
+
+  const openTrendingFAQ = useCallback((id: string) => {
+    setOpenFAQs((prev) => new Set([...prev, id]));
+    // Smooth scroll to the FAQ
+    setTimeout(() => {
+      const el = document.getElementById(`faq-${id}`);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    }, 100);
   }, []);
 
   const expandAll = () => {
@@ -142,102 +154,131 @@ export default function FAQPage() {
       </section>
 
       {/* Main Content */}
-      <main className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8 py-8">
-        {/* Category Filter */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.3 }}
-          className="mb-6"
-        >
-          <CategoryFilter
-            categories={categories}
-            selected={selectedCategory}
-            onSelect={setSelectedCategory}
-          />
-        </motion.div>
-
-        {/* Controls */}
-        <div className="flex items-center justify-between mb-6">
-          <p className="text-sm text-muted">
-            Showing{" "}
-            <span className="text-foreground font-medium">
-              {filteredFAQs.length}
-            </span>{" "}
-            question{filteredFAQs.length !== 1 ? "s" : ""}
-          </p>
-          <div className="flex gap-2">
-            <button
-              onClick={expandAll}
-              className="text-xs px-3 py-1.5 rounded-lg border border-border text-muted hover:text-foreground hover:border-muted transition-all"
-            >
-              Expand all
-            </button>
-            <button
-              onClick={collapseAll}
-              className="text-xs px-3 py-1.5 rounded-lg border border-border text-muted hover:text-foreground hover:border-muted transition-all"
-            >
-              Collapse all
-            </button>
-          </div>
-        </div>
-
-        {/* FAQ List */}
-        <div className="space-y-3">
-          {groupedFAQs.map((group, groupIdx) => (
-            <div key={group.category || groupIdx}>
-              {group.category && (
-                <motion.h2
-                  initial={{ opacity: 0, x: -10 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: groupIdx * 0.05 }}
-                  className="text-lg font-semibold mb-3 mt-8 first:mt-0 flex items-center gap-2"
-                >
-                  <span>
-                    {categories.find((c) => c.name === group.category)?.icon}
-                  </span>
-                  {group.category}
-                </motion.h2>
-              )}
-              <div className="space-y-2">
-                {group.faqs.map((faq, idx) => (
-                  <motion.div
-                    key={faq.id}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: idx * 0.03 }}
-                  >
-                    <FAQCard
-                      faq={faq}
-                      isOpen={openFAQs.has(faq.id)}
-                      onToggle={() => toggleFAQ(faq.id)}
-                      searchQuery={searchQuery}
-                    />
-                  </motion.div>
-                ))}
-              </div>
-            </div>
-          ))}
-
-          {filteredFAQs.length === 0 && (
+      <main className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Left: FAQ Browser */}
+          <div className="lg:col-span-2">
+            {/* Category Filter */}
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              className="text-center py-16"
+              transition={{ delay: 0.3 }}
+              className="mb-6"
             >
-              <p className="text-4xl mb-4">🔍</p>
-              <p className="text-lg font-medium mb-2">No results found</p>
-              <p className="text-sm text-muted mb-4">
-                Try different keywords or ask Yaksha directly
-              </p>
-              <button
-                onClick={() => setSearchQuery("")}
-                className="text-sm text-accent hover:underline"
-              >
-                Clear search
-              </button>
+              <CategoryFilter
+                categories={categories}
+                selected={selectedCategory}
+                onSelect={setSelectedCategory}
+              />
             </motion.div>
-          )}
+
+            {/* Controls */}
+            <div className="flex items-center justify-between mb-6">
+              <p className="text-sm text-muted">
+                Showing{" "}
+                <span className="text-foreground font-medium">
+                  {filteredFAQs.length}
+                </span>{" "}
+                question{filteredFAQs.length !== 1 ? "s" : ""}
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={expandAll}
+                  className="text-xs px-3 py-1.5 rounded-lg border border-border text-muted hover:text-foreground hover:border-muted transition-all"
+                >
+                  Expand all
+                </button>
+                <button
+                  onClick={collapseAll}
+                  className="text-xs px-3 py-1.5 rounded-lg border border-border text-muted hover:text-foreground hover:border-muted transition-all"
+                >
+                  Collapse all
+                </button>
+              </div>
+            </div>
+
+            {/* FAQ List */}
+            <div className="space-y-3">
+              {groupedFAQs.map((group, groupIdx) => (
+                <div key={group.category || groupIdx}>
+                  {group.category && (
+                    <motion.h2
+                      initial={{ opacity: 0, x: -10 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: groupIdx * 0.05 }}
+                      className="text-lg font-semibold mb-3 mt-8 first:mt-0 flex items-center gap-2"
+                    >
+                      <span>
+                        {categories.find((c) => c.name === group.category)?.icon}
+                      </span>
+                      {group.category}
+                    </motion.h2>
+                  )}
+                  <div className="space-y-2">
+                    {group.faqs.map((faq, idx) => (
+                      <motion.div
+                        key={faq.id}
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: idx * 0.03 }}
+                      >
+                        <FAQCard
+                          faq={faq}
+                          isOpen={openFAQs.has(faq.id)}
+                          onToggle={() => toggleFAQ(faq.id)}
+                          searchQuery={searchQuery}
+                        />
+                      </motion.div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+
+              {filteredFAQs.length === 0 && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="text-center py-16"
+                >
+                  <p className="text-4xl mb-4">🔍</p>
+                  <p className="text-lg font-medium mb-2">No results found</p>
+                  <p className="text-sm text-muted mb-4">
+                    Try different keywords or ask Yaksha directly
+                  </p>
+                  <button
+                    onClick={() => setSearchQuery("")}
+                    className="text-sm text-accent hover:underline"
+                  >
+                    Clear search
+                  </button>
+                </motion.div>
+              )}
+            </div>
+          </div>
+
+          {/* Right Sidebar: Trending */}
+          <aside className="lg:col-span-1">
+            <div className="lg:sticky lg:top-24 space-y-4">
+              <TrendingFAQs onSelect={openTrendingFAQ} />
+
+              {/* Quick Tip */}
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.3 }}
+                className="rounded-2xl border border-accent/30 bg-accent/5 p-5"
+              >
+                <h3 className="text-sm font-semibold mb-2 flex items-center gap-2">
+                  💡 Quick Tip
+                </h3>
+                <p className="text-xs text-muted leading-relaxed">
+                  Can&apos;t find your answer? Click the{" "}
+                  <span className="text-accent font-medium">Ask Yaksha</span>{" "}
+                  button at the bottom right and our AI will help you instantly.
+                </p>
+              </motion.div>
+            </div>
+          </aside>
         </div>
 
         {/* Footer */}
