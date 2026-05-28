@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import toast from "react-hot-toast";
 import Header from "@/components/Header";
@@ -14,6 +14,7 @@ import {
   Filter,
   Sparkles,
   Mail,
+  RefreshCw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -25,68 +26,40 @@ interface PendingQuestion {
   priority: "normal" | "urgent";
   submittedAt: string;
   status: "pending" | "resolved" | "rejected";
-  suggestedAnswer?: string;
+  suggestedAnswer?: string | null;
+  answer?: string | null;
 }
 
-// Mock pending questions
-const mockQuestions: PendingQuestion[] = [
-  {
-    id: "pq-1",
-    question: "Can I use my college library WiFi for ViBe sessions or does it need to be personal WiFi?",
-    category: "ViBe Platform",
-    email: "student1@college.ac.in",
-    priority: "normal",
-    submittedAt: "2026-05-24 10:30",
-    status: "pending",
-    suggestedAnswer: "You can use any WiFi connection for ViBe sessions. However, if you face access issues on college WiFi, try switching to personal WiFi as some college networks have restrictions. See FAQ 12.2 for DNS troubleshooting steps.",
-  },
-  {
-    id: "pq-2",
-    question: "My NOC was signed by the Vice Principal instead of HOD. Is that acceptable?",
-    category: "NOC",
-    email: "student2@university.edu",
-    priority: "urgent",
-    submittedAt: "2026-05-24 09:15",
-    status: "pending",
-    suggestedAnswer: "Yes, a Vice Principal is an acceptable signatory. Any authorised signatory at your college (HOD, Principal, Dean, Director, or Training & Placement Officer) can sign the NOC. A Vice Principal falls under this category.",
-  },
-  {
-    id: "pq-3",
-    question: "I accidentally submitted my team formation with a typo in my teammate's email. How do I fix this?",
-    category: "Team Formation",
-    email: "student3@inst.ac.in",
-    priority: "normal",
-    submittedAt: "2026-05-23 18:45",
-    status: "pending",
-    suggestedAnswer: "No action is required from your side. The administration will verify and match email IDs with names before finalizing and locking teams. See FAQ 13.5.",
-  },
-  {
-    id: "pq-4",
-    question: "Is there a way to speed up ViBe video playback? The 1x speed feels too slow for content I already know.",
-    category: "ViBe Platform",
-    email: "student4@college.edu",
-    priority: "normal",
-    submittedAt: "2026-05-23 14:20",
-    status: "pending",
-    suggestedAnswer: "ViBe does not support speed adjustment. The platform uses linear progression with proctoring, and videos must be watched at normal speed. If you feel the content is below your level, you may request the viva-route exemption. See FAQ 12.7 for the alternative evaluation path.",
-  },
-  {
-    id: "pq-5",
-    question: "My internship starts on June 1 but I haven't received any Zoom link yet. Should I be worried?",
-    category: "Selection & Offer Letter",
-    email: "student5@univ.ac.in",
-    priority: "urgent",
-    submittedAt: "2026-05-24 11:00",
-    status: "pending",
-    suggestedAnswer: "The Zoom link for daily standups is posted in the Announcements section on your samagama.in dashboard. Check the announcement bell at the top of the page. If you still can't find it, type #escalate in the Yaksha chat. See FAQ 4.17.",
-  },
-];
-
 export default function ResolvePage() {
-  const [questions, setQuestions] = useState<PendingQuestion[]>(mockQuestions);
+  const [questions, setQuestions] = useState<PendingQuestion[]>([]);
+  const [loading, setLoading] = useState(true);
   const [selectedQuestion, setSelectedQuestion] = useState<PendingQuestion | null>(null);
   const [answer, setAnswer] = useState("");
   const [filter, setFilter] = useState<"all" | "pending" | "urgent">("all");
+  const [submitting, setSubmitting] = useState(false);
+
+  const loadQuestions = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/admin/pending-questions?status=all", {
+        headers: { "x-admin-key": localStorage.getItem("samagama_admin_key") ?? "dev-admin" },
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setQuestions(data.questions);
+      } else {
+        toast.error(data.error?.message ?? "Failed to load questions");
+      }
+    } catch {
+      toast.error("Network error — could not load questions");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadQuestions();
+  }, [loadQuestions]);
 
   const filteredQuestions = questions.filter((q) => {
     if (filter === "pending") return q.status === "pending";
@@ -94,51 +67,85 @@ export default function ResolvePage() {
     return true;
   });
 
-  const handleResolve = (id: string) => {
-    const question = questions.find((q) => q.id === id);
-    setQuestions((prev) =>
-      prev.map((q) => (q.id === id ? { ...q, status: "resolved" as const } : q))
-    );
-
-    // Email notification simulation
-    toast.success(
-      <div className="flex flex-col gap-1">
-        <div className="flex items-center gap-2 font-semibold">
-          <Mail size={14} />
-          <span>Email sent successfully</span>
-        </div>
-        <p className="text-xs opacity-80">
-          Notification delivered to {question?.email}
-        </p>
-      </div>,
-      { duration: 4000 }
-    );
-
-    setSelectedQuestion(null);
-    setAnswer("");
+  const handleResolve = async (id: string) => {
+    if (!answer.trim()) return;
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/admin/pending-questions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-admin-key": localStorage.getItem("samagama_admin_key") ?? "dev-admin",
+        },
+        body: JSON.stringify({ id, action: "resolve", answer }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setQuestions((prev) =>
+          prev.map((q) => (q.id === id ? { ...q, status: "resolved" as const } : q))
+        );
+        toast.success(
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center gap-2 font-semibold">
+              <Mail size={14} />
+              <span>Question resolved</span>
+            </div>
+            <p className="text-xs opacity-80">
+              Notification sent to {selectedQuestion?.email}
+            </p>
+          </div>,
+          { duration: 4000 }
+        );
+        setSelectedQuestion(null);
+        setAnswer("");
+      } else {
+        toast.error(data.error?.message ?? "Failed to resolve question");
+      }
+    } catch {
+      toast.error("Network error — could not resolve question");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  const handleReject = (id: string) => {
-    const question = questions.find((q) => q.id === id);
-    setQuestions((prev) =>
-      prev.map((q) => (q.id === id ? { ...q, status: "rejected" as const } : q))
-    );
-
-    toast.error(
-      <div className="flex flex-col gap-1">
-        <div className="flex items-center gap-2 font-semibold">
-          <Mail size={14} />
-          <span>Question rejected</span>
-        </div>
-        <p className="text-xs opacity-80">
-          User notified: {question?.email}
-        </p>
-      </div>,
-      { duration: 4000 }
-    );
-
-    setSelectedQuestion(null);
-    setAnswer("");
+  const handleReject = async (id: string) => {
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/admin/pending-questions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-admin-key": localStorage.getItem("samagama_admin_key") ?? "dev-admin",
+        },
+        body: JSON.stringify({ id, action: "reject" }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setQuestions((prev) =>
+          prev.map((q) => (q.id === id ? { ...q, status: "rejected" as const } : q))
+        );
+        toast.error(
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center gap-2 font-semibold">
+              <Mail size={14} />
+              <span>Question rejected</span>
+            </div>
+            <p className="text-xs opacity-80">
+              User notified: {selectedQuestion?.email}
+            </p>
+          </div>,
+          { duration: 4000 }
+        );
+        setSelectedQuestion(null);
+        setAnswer("");
+      } else {
+        toast.error(data.error?.message ?? "Failed to reject question");
+      }
+    } catch {
+      toast.error("Network error — could not reject question");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const pendingCount = questions.filter((q) => q.status === "pending").length;
@@ -156,12 +163,24 @@ export default function ResolvePage() {
           animate={{ opacity: 1, y: 0 }}
           className="mb-8"
         >
-          <h1 className="text-2xl sm:text-3xl font-bold mb-2">
-            Resolve <span className="text-accent">Questions</span>
-          </h1>
-          <p className="text-muted text-sm">
-            Admin panel — review, answer, or reject pending questions
-          </p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-2xl sm:text-3xl font-bold mb-2">
+                Resolve <span className="text-accent">Questions</span>
+              </h1>
+              <p className="text-muted text-sm">
+                Admin panel — review, answer, or reject pending questions
+              </p>
+            </div>
+            <button
+              onClick={loadQuestions}
+              disabled={loading}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl border border-border text-muted hover:text-foreground hover:border-muted transition-all text-sm"
+            >
+              <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
+              Refresh
+            </button>
+          </div>
         </motion.div>
 
         {/* Stats */}
@@ -217,72 +236,76 @@ export default function ResolvePage() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Question List */}
           <div className="space-y-3">
-            {filteredQuestions.map((q, idx) => (
-              <motion.div
-                key={q.id}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: idx * 0.05 }}
-                onClick={() => {
-                  setSelectedQuestion(q);
-                  setAnswer(q.suggestedAnswer || "");
-                }}
-                className={cn(
-                  "rounded-xl border p-4 cursor-pointer transition-all",
-                  selectedQuestion?.id === q.id
-                    ? "border-accent bg-accent/5"
-                    : "border-border bg-card hover:border-muted",
-                  q.status === "resolved" && "opacity-50",
-                  q.status === "rejected" && "opacity-30"
-                )}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span
-                        className={cn(
-                          "text-xs px-2 py-0.5 rounded-full font-medium",
-                          q.priority === "urgent"
-                            ? "bg-danger/20 text-danger"
-                            : "bg-accent/10 text-accent"
-                        )}
-                      >
-                        {q.priority}
-                      </span>
-                      <span className="text-xs text-muted">{q.category}</span>
-                      {q.status !== "pending" && (
-                        <span
-                          className={cn(
-                            "text-xs px-2 py-0.5 rounded-full",
-                            q.status === "resolved"
-                              ? "bg-success/20 text-success"
-                              : "bg-danger/20 text-danger"
-                          )}
-                        >
-                          {q.status}
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-sm font-medium leading-relaxed">
-                      {q.question}
-                    </p>
-                    <div className="flex items-center gap-3 mt-2">
-                      <span className="text-xs text-muted">{q.email}</span>
-                      <span className="text-xs text-muted">
-                        {q.submittedAt}
-                      </span>
-                    </div>
-                  </div>
-                  <MessageSquare size={16} className="text-muted shrink-0" />
-                </div>
-              </motion.div>
-            ))}
-
-            {filteredQuestions.length === 0 && (
+            {loading ? (
+              <div className="text-center py-16 text-muted text-sm">
+                Loading questions…
+              </div>
+            ) : filteredQuestions.length === 0 ? (
               <div className="text-center py-12">
                 <CheckCircle size={48} className="text-success mx-auto mb-4 opacity-50" />
                 <p className="text-muted">No questions in this filter</p>
               </div>
+            ) : (
+              filteredQuestions.map((q, idx) => (
+                <motion.div
+                  key={q.id}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: idx * 0.05 }}
+                  onClick={() => {
+                    setSelectedQuestion(q);
+                    setAnswer(q.suggestedAnswer || "");
+                  }}
+                  className={cn(
+                    "rounded-xl border p-4 cursor-pointer transition-all",
+                    selectedQuestion?.id === q.id
+                      ? "border-accent bg-accent/5"
+                      : "border-border bg-card hover:border-muted",
+                    q.status === "resolved" && "opacity-50",
+                    q.status === "rejected" && "opacity-30"
+                  )}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span
+                          className={cn(
+                            "text-xs px-2 py-0.5 rounded-full font-medium",
+                            q.priority === "urgent"
+                              ? "bg-danger/20 text-danger"
+                              : "bg-accent/10 text-accent"
+                          )}
+                        >
+                          {q.priority}
+                        </span>
+                        <span className="text-xs text-muted">{q.category}</span>
+                        {q.status !== "pending" && (
+                          <span
+                            className={cn(
+                              "text-xs px-2 py-0.5 rounded-full",
+                              q.status === "resolved"
+                                ? "bg-success/20 text-success"
+                                : "bg-danger/20 text-danger"
+                            )}
+                          >
+                            {q.status}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-sm font-medium leading-relaxed">
+                        {q.question}
+                      </p>
+                      <div className="flex items-center gap-3 mt-2">
+                        <span className="text-xs text-muted">{q.email}</span>
+                        <span className="text-xs text-muted">
+                          {new Date(q.submittedAt).toLocaleString()}
+                        </span>
+                      </div>
+                    </div>
+                    <MessageSquare size={16} className="text-muted shrink-0" />
+                  </div>
+                </motion.div>
+              ))
             )}
           </div>
 
@@ -328,25 +351,27 @@ export default function ResolvePage() {
                   placeholder="Type your answer here..."
                   rows={6}
                   className="w-full bg-background border border-border rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-accent transition-colors resize-none placeholder:text-muted mb-4"
+                  disabled={submitting}
                 />
 
                 <div className="flex gap-2">
                   <button
                     onClick={() => handleResolve(selectedQuestion.id)}
-                    disabled={!answer.trim()}
+                    disabled={!answer.trim() || submitting}
                     className={cn(
                       "flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-medium transition-all",
-                      answer.trim()
+                      answer.trim() && !submitting
                         ? "bg-success text-background hover:bg-success/90"
                         : "bg-card border border-border text-muted cursor-not-allowed"
                     )}
                   >
                     <Send size={14} />
-                    Resolve
+                    {submitting ? "Resolving…" : "Resolve"}
                   </button>
                   <button
                     onClick={() => handleReject(selectedQuestion.id)}
-                    className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border border-danger/30 text-danger hover:bg-danger/10 transition-all"
+                    disabled={submitting}
+                    className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border border-danger/30 text-danger hover:bg-danger/10 transition-all disabled:opacity-50"
                   >
                     <Trash2 size={14} />
                     Reject
