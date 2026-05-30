@@ -114,42 +114,57 @@ function ThreadCard({ thread: initialThread }: { thread: Thread }) {
   const [expanded, setExpanded] = useState(false);
   const [replyText, setReplyText] = useState("");
   const [showReplyForm, setShowReplyForm] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   const answerConfig = roleConfig[thread.answeredByRole];
   const AnswerIcon = answerConfig.icon;
 
-  const handleAddReply = () => {
-    if (!replyText.trim()) return;
+  const handleAddReply = async () => {
+    const content = replyText.trim();
+    if (!content || submitting) return;
 
-    const newReply: Reply = {
-      id: `r-${Date.now()}`,
-      author: "You (Anonymous)",
-      authorRole: "user",
-      content: replyText.trim(),
-      timestamp: new Date().toISOString().slice(0, 16).replace("T", " "),
-      likes: 0,
-    };
+    setSubmitting(true);
+    try {
+      const res = await fetch(
+        `/api/community/threads/${thread.id}/replies`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content }),
+        }
+      );
+      const json = await res.json();
+      if (!res.ok || !json.ok) {
+        throw new Error(json?.error?.message ?? "Failed to post reply");
+      }
 
-    setThread({
-      ...thread,
-      replies: [...thread.replies, newReply],
-    });
+      // Use the reply the server actually saved (id + timestamp from DB).
+      setThread({
+        ...thread,
+        replies: [...thread.replies, json.reply as Reply],
+      });
+      setReplyText("");
+      setShowReplyForm(false);
 
-    setReplyText("");
-    setShowReplyForm(false);
-
-    toast.success(
-      <div className="flex flex-col gap-1">
-        <div className="flex items-center gap-2 font-semibold">
-          <Mail size={14} />
-          <span>Reply posted</span>
-        </div>
-        <p className="text-xs opacity-80">
-          Notification sent to thread participants
-        </p>
-      </div>,
-      { duration: 4000 }
-    );
+      toast.success(
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-2 font-semibold">
+            <Mail size={14} />
+            <span>Reply posted</span>
+          </div>
+          <p className="text-xs opacity-80">
+            Notification sent to thread participants
+          </p>
+        </div>,
+        { duration: 4000 }
+      );
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Failed to post reply"
+      );
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -295,16 +310,16 @@ function ThreadCard({ thread: initialThread }: { thread: Thread }) {
                     </button>
                     <button
                       onClick={handleAddReply}
-                      disabled={!replyText.trim()}
+                      disabled={!replyText.trim() || submitting}
                       className={cn(
                         "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all",
-                        replyText.trim()
+                        replyText.trim() && !submitting
                           ? "bg-accent text-background hover:bg-accent-hover"
                           : "bg-card text-muted border border-border cursor-not-allowed"
                       )}
                     >
                       <Send size={12} />
-                      Post Reply
+                      {submitting ? "Posting…" : "Post Reply"}
                     </button>
                   </div>
                 </motion.div>
