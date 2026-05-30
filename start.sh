@@ -66,9 +66,14 @@ fi
 
 # ── 4. Next.js – .env.local setup ────────────────────────────────────────────
 if [ ! -f "$WEB_DIR/.env.local" ]; then
-    warn "\n⚠️   No .env.local found in faq-web/."
-    warn "    Copying from .env.example — please fill in MONGODB_URI and GEMINI_API_KEY."
-    cp "$WEB_DIR/.env.example" "$WEB_DIR/.env.local"
+    if [ -f "$WEB_DIR/.env" ]; then
+        warn "\n⚠️   No .env.local found — copying from .env (your local credentials)."
+        cp "$WEB_DIR/.env" "$WEB_DIR/.env.local"
+    else
+        warn "\n⚠️   No .env.local found in faq-web/."
+        warn "    Copying from .env.example — please fill in MONGODB_URI and GEMINI_API_KEY."
+        cp "$WEB_DIR/.env.example" "$WEB_DIR/.env.local"
+    fi
 fi
 
 # ── 5. Start RAG API in background ───────────────────────────────────────────

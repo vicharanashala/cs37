@@ -126,6 +126,8 @@ export async function POST(
         question: thread.question,
       });
 
+      
+
       // Fail open: if the RAG service is down, leave the reply "pending".
       if (!verdict) return;
 

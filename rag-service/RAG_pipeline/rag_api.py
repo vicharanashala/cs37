@@ -8,9 +8,11 @@ Run:
   uvicorn rag_api:app --reload --port 8000
 
 Endpoints:
-  POST /query          ->  RAG: retrieve chunks + generate answer with Gemini
-  GET  /search         ->  Pure vector search (no LLM, returns raw chunks)
-  GET  /health         ->  Health check
+  POST /query             ->  RAG: retrieve chunks + generate answer with Gemini
+  GET  /search            ->  Pure vector search (no LLM, returns raw chunks)
+  POST /validate-question ->  Moderate a submitted question + write verdict to MongoDB
+  POST /validate-reply    ->  Moderate a community reply (stateless verdict)
+  GET  /health            ->  Health check
 
 Your MERN frontend / backend calls POST /query with:
   { "question": "How do I get the offer letter?" }
@@ -26,6 +28,7 @@ import json
 import os
 import re
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from typing import Optional
 
 import chromadb
@@ -36,18 +39,30 @@ from fastapi.middleware.cors import CORSMiddleware
 from google import genai
 from google.genai import types
 from pydantic import BaseModel
+from pymongo import MongoClient
+from bson import ObjectId
+from bson.errors import InvalidId
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
 load_dotenv()
 
 GEMINI_API_KEY   = os.getenv("GEMINI_API_KEY")
+MONGODB_URI      = os.getenv("MONGODB_URI")   # same Atlas cluster as the Next.js app
 EMBEDDING_MODEL  = "gemini-embedding-001"
-GENERATION_MODEL = "gemini-2.0-flash-lite"   # fast + free tier
+GENERATION_MODEL = "gemini-3.1-flash-lite"   # fast + free tier
 COLLECTION_NAME  = "samagama_internship"
 CHROMA_PATH      = "./chroma_db"
 
 TOP_K            = 5   # number of chunks to retrieve per query
+
+# Where submitted questions live, keyed by their MongoDB ObjectId. The
+# /validate-question payload carries no discriminator, so we update both;
+# only the collection actually holding the _id matches (the other is a no-op).
+QUESTION_COLLECTIONS = [
+    ("RAG_Project", "pending_questions"),    # written by /api/ask
+    ("samagama",    "community_questions"),  # written by /api/community/questions
+]
 
 # ── App state (loaded once at startup) ───────────────────────────────────────
 
@@ -69,7 +84,21 @@ async def lifespan(app: FastAPI):
     )
     count = app_state["collection"].count()
     print(f"[OK] ChromaDB loaded - {count} chunks in '{COLLECTION_NAME}'")
+
+    # MongoDB is only needed to write back /validate-question verdicts. If the
+    # URI is missing we still serve every other endpoint (fail-open on writeback).
+    if MONGODB_URI:
+        app_state["mongo"] = MongoClient(MONGODB_URI)
+        print("[OK] MongoDB client connected")
+    else:
+        app_state["mongo"] = None
+        print("[WARN] MONGODB_URI not set - /validate-question writeback disabled")
+
     yield
+
+    mongo = app_state.get("mongo")
+    if mongo is not None:
+        mongo.close()
     app_state.clear()
 
 
@@ -127,6 +156,25 @@ class ReplyValidationResponse(BaseModel):
     reason:     str
     categories: list[str]
     model:      str
+
+
+class QuestionValidationRequest(BaseModel):
+    """Sent by the Next.js backend after a question is saved to MongoDB."""
+    question_id:    str
+    question_text:  str
+    category:       Optional[str] = None
+    institution_id: Optional[str] = None
+
+
+class QuestionValidationResponse(BaseModel):
+    """
+    Verdict echoed back to the Next.js backend. The backend ignores this body
+    (it relies on the MongoDB writeback); it is returned for curl/tests.
+    """
+    question_id: str
+    status:      str           # "approved" | "rejected"
+    reason:      str
+    model:       str
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -274,6 +322,99 @@ JSON:"""
     ]
     return {"status": status, "reason": reason, "categories": categories}
 
+
+def moderate_question(question_text: str, category: Optional[str]) -> dict:
+    """
+    Validate a submitted question before it is shown publicly. Approves genuine
+    questions about the internship programme; rejects malicious content, spam,
+    or off-topic questions. Returns {"status", "reason"}.
+    Raises on LLM / parsing failure so the caller can fail open (stay pending).
+    """
+    prompt = f"""You are a content gate for the student community forum of the \
+Vicharanashala internship programme at IIT Ropar. Decide whether the QUESTION below \
+should be published.
+
+Mark decision = "rejected" if the question is ANY of:
+- Malicious content: harassment, hate speech, threats, violence, sexual content, \
+self-harm encouragement, personal data / doxxing, or malware / hacking instructions.
+- Malpractice / academic dishonesty: soliciting exam/quiz answers, cheating, plagiarism, \
+leaking confidential material, sharing account credentials, or bypassing ViBe proctoring.
+- Spam / advertising: scams, promotions, or links to UNOFFICIAL WhatsApp / Telegram / peer groups.
+- Off-topic: unrelated to the Vicharanashala internship programme, the application/NOC/offer-letter \
+process, ViBe, mentorship, or student life in the programme.
+
+Otherwise decision = "approved".
+
+Respond with ONLY a JSON object (no markdown, no prose) in exactly this form:
+{{"decision": "approved" | "rejected", "reason": "<one short sentence>", "categories": ["<zero or more of: {', '.join(MODERATION_CATEGORIES)}>"]}}
+
+CATEGORY: {category or "(not provided)"}
+QUESTION: {question_text}
+JSON:"""
+
+    response = app_state["gemini"].models.generate_content(
+        model    = GENERATION_MODEL,
+        contents = prompt,
+        config   = types.GenerateContentConfig(
+            temperature       = 0.0,   # deterministic gating
+            max_output_tokens = 256,
+        ),
+    )
+
+    verdict = _parse_json_verdict(response.text)
+
+    decision = str(verdict.get("decision", "")).lower()
+    status   = "rejected" if decision == "rejected" else "approved"
+    reason   = str(verdict.get("reason", "")).strip() or (
+        "Flagged by validation" if status == "rejected" else "No issues detected"
+    )
+    return {"status": status, "reason": reason}
+
+
+def _write_question_verdict(question_id: str, status: str, reason: str) -> None:
+    """
+    Write the validation verdict back onto the question document in MongoDB.
+
+    The Next.js backend ignores the HTTP response and relies on this writeback.
+    Since the payload has no collection discriminator, we update every known
+    question collection by _id; only the one holding the id matches.
+    Fails open (logs + returns) if Mongo is unavailable or the id is malformed.
+    """
+    mongo = app_state.get("mongo")
+    if mongo is None:
+        print(f"[WARN] No MongoDB client - skipping writeback for {question_id}")
+        return
+
+    try:
+        oid = ObjectId(question_id)
+    except (InvalidId, TypeError):
+        print(f"[WARN] Invalid question_id '{question_id}' - skipping writeback")
+        return
+
+    now = datetime.now(timezone.utc)
+    decision   = "approved" if status == "approved" else "rejected"
+    doc_status = "approved" if status == "approved" else "rejected_by_rag"
+    set_doc = {
+        "status": doc_status,
+        "ragValidation": {
+            "decision":    decision,
+            "reason":      reason,
+            "model":       GENERATION_MODEL,
+            "validatedAt": now,
+        },
+        "updatedAt": now,
+    }
+
+    for db_name, coll_name in QUESTION_COLLECTIONS:
+        try:
+            res = mongo[db_name][coll_name].update_one(
+                {"_id": oid}, {"$set": set_doc}
+            )
+            if res.matched_count:
+                print(f"[OK] Wrote verdict '{doc_status}' to {db_name}.{coll_name} for {question_id}")
+        except Exception as err:
+            print(f"[WARN] Writeback to {db_name}.{coll_name} failed for {question_id}: {err}")
+
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 @app.get("/health")
@@ -357,6 +498,37 @@ def validate_reply(req: ReplyValidationRequest):
         reason     = result["reason"],
         categories = result["categories"],
         model      = GENERATION_MODEL,
+    )
+
+
+@app.post("/validate-question", response_model=QuestionValidationResponse)
+def validate_question(req: QuestionValidationRequest):
+    """
+    Validate a submitted question, then write the verdict back to MongoDB.
+
+    The Next.js backend fires this after saving the question (status "pending" /
+    "pending_rag") and does NOT read the response — it relies on the writeback to
+    flip the document's status to "approved" / "rejected_by_rag".
+    """
+    text = req.question_text.strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Question text cannot be empty")
+
+    try:
+        result = moderate_question(text, req.category)
+    except Exception as err:   # LLM / parse failure -> let caller stay "pending"
+        raise HTTPException(
+            status_code=502,
+            detail=f"Validation failed: {err}",
+        )
+
+    _write_question_verdict(req.question_id, result["status"], result["reason"])
+
+    return QuestionValidationResponse(
+        question_id = req.question_id,
+        status      = result["status"],
+        reason      = result["reason"],
+        model       = GENERATION_MODEL,
     )
 
 

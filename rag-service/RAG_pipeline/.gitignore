@@ -1,0 +1,73 @@
+# ─── Python virtual environment ───────────────────────────────────────────────
+venv/
+.venv/
+env/
+.env_python/
+__pypackages__/
+
+# ─── Python bytecode / caches ─────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# ─── Distribution / packaging ─────────────────────────────────────────────────
+dist/
+build/
+*.egg-info/
+*.egg
+.eggs/
+MANIFEST
+
+# ─── ChromaDB persistent store ────────────────────────────────────────────────
+# The vector database is rebuilt from source data — never commit binary blobs
+chroma_db/
+
+# ─── Environment / Secrets ────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+!.env.*.example
+!.env.template
+
+# ─── Jupyter Notebooks (if used for experimentation) ─────────────────────────
+.ipynb_checkpoints/
+*.ipynb
+
+# ─── Testing / Coverage ───────────────────────────────────────────────────────
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# ─── Type checking ────────────────────────────────────────────────────────────
+.mypy_cache/
+.dmypy.json
+.pytype/
+
+# ─── Linting ──────────────────────────────────────────────────────────────────
+.ruff_cache/
+
+# ─── Raw / processed data files ───────────────────────────────────────────────
+# Large source PDFs / scraped HTML used to build the vector store
+data/*.pdf
+data/*.html
+data/*.csv
+data/*.parquet
+
+# ─── Logs ─────────────────────────────────────────────────────────────────────
+*.log
+logs/
+
+# ─── OS / Editor ──────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
