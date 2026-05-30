@@ -3,16 +3,21 @@
 /**
  * app/community/page.tsx
  *
- * Community Q&A home: search, tag filter, sort (recent / most-answered /
- * unanswered / trending), and an "Ask a question" entry point. Reuses the
- * existing dark theme tokens and framer-motion patterns from the FAQ pages.
+ * Community Q&A home: search, category filter, sort (recent / most-answered /
+ * unanswered / trending) and an "Ask a question" entry point.
+ *
+ * Content is fetched live from GET /api/community/threads, which reads the
+ * `community` collection in MongoDB. Each question card shows the genuine
+ * answer and the full reply chain (author, role, content, likes).
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
+import toast from "react-hot-toast";
 import {
   MessageSquare,
+  MessageCircle,
   Search,
   Plus,
   TrendingUp,
@@ -20,11 +25,22 @@ import {
   CheckCircle,
   HelpCircle,
   Eye,
+  ThumbsUp,
+  Send,
+  Shield,
+  User,
+  Award,
+  ChevronDown,
+  Mail,
 } from "lucide-react";
 import Header from "@/components/Header";
+import YakshaChat from "@/components/YakshaChat";
 import { cn } from "@/lib/utils";
-import { api } from "@/lib/community/client";
-import type { QuestionDTO } from "@/lib/community/types";
+import type { Thread, Reply } from "@/lib/community/threadModel";
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
 
 const SORTS = [
   { key: "recent", label: "Recent", icon: Clock },
@@ -33,32 +49,408 @@ const SORTS = [
   { key: "trending", label: "Trending", icon: TrendingUp },
 ] as const;
 
-const TAGS = [
-  "internship", "noc", "certificate", "offer-letter", "exam",
-  "team-formation", "vibe", "rosetta", "selection",
-];
+// ---------------------------------------------------------------------------
+// Role badge config (same as threads/page.tsx)
+// ---------------------------------------------------------------------------
+
+const roleConfig = {
+  admin: {
+    label: "Admin",
+    icon: Shield,
+    color: "text-accent",
+    bg: "bg-accent/10",
+    border: "border-accent/30",
+  },
+  mentor: {
+    label: "Mentor",
+    icon: Award,
+    color: "text-success",
+    bg: "bg-success/10",
+    border: "border-success/30",
+  },
+  user: {
+    label: "Student",
+    icon: User,
+    color: "text-muted",
+    bg: "bg-card",
+    border: "border-border",
+  },
+};
+
+// ---------------------------------------------------------------------------
+// ReplyCard (same as threads/page.tsx)
+// ---------------------------------------------------------------------------
+
+function ReplyCard({ reply }: { reply: Reply }) {
+  const [liked, setLiked] = useState(false);
+  const config = roleConfig[reply.authorRole];
+  const Icon = config.icon;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      className={cn(
+        "rounded-xl border p-4",
+        reply.authorRole === "admin" || reply.authorRole === "mentor"
+          ? `${config.bg} ${config.border}`
+          : "bg-background border-border"
+      )}
+    >
+      <div className="flex items-start gap-3">
+        <div
+          className={cn(
+            "shrink-0 w-8 h-8 rounded-full flex items-center justify-center",
+            config.bg,
+            "border",
+            config.border
+          )}
+        >
+          <Icon size={14} className={config.color} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1 flex-wrap">
+            <span className="text-sm font-semibold">{reply.author}</span>
+            <span
+              className={cn(
+                "text-xs px-1.5 py-0.5 rounded-full font-medium",
+                config.bg,
+                config.color
+              )}
+            >
+              {config.label}
+            </span>
+            <span className="text-xs text-muted">· {reply.timestamp}</span>
+          </div>
+          <p className="text-sm leading-relaxed text-foreground/90">
+            {reply.content}
+          </p>
+          <div className="mt-2 flex items-center gap-4">
+            <button
+              onClick={() => setLiked(!liked)}
+              className={cn(
+                "flex items-center gap-1.5 text-xs px-2 py-1 rounded-lg transition-all",
+                liked
+                  ? "text-accent bg-accent/10"
+                  : "text-muted hover:text-foreground hover:bg-card"
+              )}
+            >
+              <ThumbsUp size={12} />
+              <span>{reply.likes + (liked ? 1 : 0)}</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// QuestionCard — full ThreadCard UI: real answer + real replies
+// ---------------------------------------------------------------------------
+
+function QuestionCard({ thread: initialThread }: { thread: Thread }) {
+  const [thread, setThread] = useState(initialThread);
+  const [expanded, setExpanded] = useState(false);
+  const [replyText, setReplyText] = useState("");
+  const [showReplyForm, setShowReplyForm] = useState(false);
+
+  const answerConfig = roleConfig[thread.answeredByRole];
+  const AnswerIcon = answerConfig.icon;
+  const resolved = thread.status === "resolved";
+
+  const handleAddReply = () => {
+    if (!replyText.trim()) return;
+
+    const newReply: Reply = {
+      id: `r-${Date.now()}`,
+      author: "You (Anonymous)",
+      authorRole: "user",
+      content: replyText.trim(),
+      timestamp: new Date().toISOString().slice(0, 16).replace("T", " "),
+      likes: 0,
+    };
+
+    setThread({ ...thread, replies: [...thread.replies, newReply] });
+    setReplyText("");
+    setShowReplyForm(false);
+
+    toast.success(
+      <div className="flex flex-col gap-1">
+        <div className="flex items-center gap-2 font-semibold">
+          <Mail size={14} />
+          <span>Reply posted</span>
+        </div>
+        <p className="text-xs opacity-80">
+          Notification sent to thread participants
+        </p>
+      </div>,
+      { duration: 4000 }
+    );
+  };
+
+  return (
+    <motion.div
+      layout
+      className="rounded-2xl border border-border bg-card overflow-hidden"
+    >
+      {/* Thread Header */}
+      <div className="p-5">
+        <div className="flex items-start gap-3 mb-3">
+          <div className="flex-1 min-w-0">
+            {/* Category + status chips */}
+            <div className="flex items-center gap-2 mb-2 flex-wrap">
+              <span className="text-xs px-2 py-0.5 rounded-full bg-accent/10 text-accent font-medium">
+                {thread.category}
+              </span>
+              {resolved ? (
+                <span className="text-xs px-2 py-0.5 rounded-full bg-success/10 text-success font-medium flex items-center gap-1">
+                  <CheckCircle size={11} />
+                  Resolved
+                </span>
+              ) : (
+                <span className="text-xs px-2 py-0.5 rounded-full bg-card border border-border text-muted font-medium flex items-center gap-1">
+                  <HelpCircle size={11} />
+                  Open
+                </span>
+              )}
+            </div>
+
+            {/* Title */}
+            <h3 className="text-base sm:text-lg font-semibold leading-snug mb-2">
+              {thread.question}
+            </h3>
+
+            {/* Meta row */}
+            <div className="flex items-center gap-4 text-xs text-muted flex-wrap">
+              <span className="flex items-center gap-1">
+                <User size={12} />
+                {thread.originalAuthor}
+              </span>
+              <span className="flex items-center gap-1">
+                <Clock size={12} />
+                {thread.createdAt}
+              </span>
+              <span className="flex items-center gap-1">
+                <Eye size={12} />
+                {thread.views} views
+              </span>
+              <span className="flex items-center gap-1">
+                <MessageCircle size={12} />
+                {thread.replies.length}{" "}
+                {thread.replies.length === 1 ? "reply" : "replies"}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Initial Answer */}
+        <div
+          className={cn(
+            "rounded-xl border p-4 mt-3",
+            answerConfig.bg,
+            answerConfig.border
+          )}
+        >
+          <div className="flex items-center gap-2 mb-2">
+            <div
+              className={cn(
+                "w-7 h-7 rounded-full flex items-center justify-center border",
+                answerConfig.bg,
+                answerConfig.border
+              )}
+            >
+              <AnswerIcon size={12} className={answerConfig.color} />
+            </div>
+            <span className="text-sm font-semibold">{thread.answeredBy}</span>
+            <span
+              className={cn(
+                "text-xs px-1.5 py-0.5 rounded-full font-medium",
+                answerConfig.bg,
+                answerConfig.color
+              )}
+            >
+              {answerConfig.label}
+            </span>
+            <span className="text-xs text-muted">· Original answer</span>
+          </div>
+          <p className="text-sm leading-relaxed text-foreground/90">
+            {thread.initialAnswer}
+          </p>
+        </div>
+
+        {/* Expand / collapse replies button */}
+        {thread.replies.length > 0 && (
+          <button
+            onClick={() => setExpanded(!expanded)}
+            className="mt-4 w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-border hover:border-accent/50 hover:bg-accent/5 transition-all text-sm text-muted hover:text-accent"
+          >
+            <MessageCircle size={14} />
+            <span>
+              {expanded ? "Hide" : "Show"} {thread.replies.length} repl
+              {thread.replies.length === 1 ? "y" : "ies"}
+            </span>
+            <motion.span animate={{ rotate: expanded ? 180 : 0 }}>
+              <ChevronDown size={14} />
+            </motion.span>
+          </button>
+        )}
+      </div>
+
+      {/* Replies panel */}
+      <AnimatePresence>
+        {expanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="overflow-hidden border-t border-border bg-background/50"
+          >
+            <div className="p-5 space-y-3">
+              {thread.replies.map((reply) => (
+                <ReplyCard key={reply.id} reply={reply} />
+              ))}
+
+              {/* Reply Form */}
+              {!showReplyForm ? (
+                <button
+                  onClick={() => setShowReplyForm(true)}
+                  className="w-full py-3 rounded-xl border border-dashed border-border hover:border-accent hover:bg-accent/5 transition-all text-sm text-muted hover:text-accent"
+                >
+                  + Add a follow-up reply
+                </button>
+              ) : (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="rounded-xl border border-accent/30 bg-accent/5 p-4"
+                >
+                  <textarea
+                    value={replyText}
+                    onChange={(e) => setReplyText(e.target.value)}
+                    placeholder="Write your follow-up question or comment..."
+                    rows={3}
+                    className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent resize-none placeholder:text-muted"
+                    autoFocus
+                  />
+                  <div className="flex justify-end gap-2 mt-2">
+                    <button
+                      onClick={() => {
+                        setShowReplyForm(false);
+                        setReplyText("");
+                      }}
+                      className="px-3 py-1.5 rounded-lg text-xs text-muted hover:text-foreground hover:bg-card transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleAddReply}
+                      disabled={!replyText.trim()}
+                      className={cn(
+                        "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all",
+                        replyText.trim()
+                          ? "bg-accent text-background hover:bg-accent-hover"
+                          : "bg-card text-muted border border-border cursor-not-allowed"
+                      )}
+                    >
+                      <Send size={12} />
+                      Post Reply
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Page
+// ---------------------------------------------------------------------------
 
 export default function CommunityHome() {
-  const [questions, setQuestions] = useState<QuestionDTO[]>([]);
+  const [threads, setThreads] = useState<Thread[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<string>("recent");
-  const [tag, setTag] = useState<string | null>(null);
+  const [category, setCategory] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    const params = new URLSearchParams({ sort });
-    if (query.trim()) params.set("q", query.trim());
-    if (tag) params.set("tag", tag);
-    const res = await api(`/api/community/questions?${params}`);
-    if (res.ok) setQuestions((res.questions as QuestionDTO[]) ?? []);
-    setLoading(false);
-  }, [sort, query, tag]);
-
+  // Fetch threads from the database (GET /api/community/threads).
   useEffect(() => {
-    const t = setTimeout(load, query ? 300 : 0); // debounce search typing
-    return () => clearTimeout(t);
-  }, [load, query]);
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const res = await fetch("/api/community/threads");
+        const json = await res.json();
+        if (cancelled) return;
+        if (!res.ok || !json.ok) {
+          throw new Error(json?.error?.message ?? "Failed to load questions");
+        }
+        setThreads(json.threads as Thread[]);
+      } catch (err) {
+        if (!cancelled) {
+          setError(
+            err instanceof Error ? err.message : "Failed to load questions"
+          );
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Categories derived from whatever threads came back from the DB.
+  const categories = useMemo(
+    () => Array.from(new Set(threads.map((t) => t.category))),
+    [threads]
+  );
+
+  // Search + filter + sort, all client-side over the fetched threads.
+  const questions = useMemo(() => {
+    let data = [...threads];
+
+    // Search filter
+    if (query.trim()) {
+      const q = query.trim().toLowerCase();
+      data = data.filter(
+        (t) =>
+          t.question.toLowerCase().includes(q) ||
+          t.initialAnswer.toLowerCase().includes(q) ||
+          t.category.toLowerCase().includes(q) ||
+          t.replies.some((r) => r.content.toLowerCase().includes(q))
+      );
+    }
+
+    // Category filter
+    if (category) {
+      data = data.filter((t) => t.category === category);
+    }
+
+    // Sort / sub-filter
+    if (sort === "recent") {
+      data.sort(
+        (a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+    } else if (sort === "answered") {
+      data.sort((a, b) => b.replies.length - a.replies.length);
+    } else if (sort === "unanswered") {
+      data = data.filter((t) => t.replies.length === 0);
+    } else if (sort === "trending") {
+      data.sort((a, b) => b.views - a.views);
+    }
+
+    return data;
+  }, [threads, query, category, sort]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -79,8 +471,8 @@ export default function CommunityHome() {
                 Community <span className="text-accent">Q&amp;A</span>
               </h1>
               <p className="text-muted text-sm max-w-xl">
-                Ask interns, answer others. Every answer is reviewed for safety
-                and accuracy before it appears.
+                Real conversations between students, mentors, and admins. Every
+                answer is reviewed for safety and accuracy before it appears.
               </p>
             </div>
             <div className="flex items-center gap-2 shrink-0">
@@ -122,7 +514,7 @@ export default function CommunityHome() {
       </section>
 
       <main className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8 py-8">
-        {/* Sort + tags */}
+        {/* Sort tabs */}
         <div className="flex flex-wrap items-center gap-2 mb-4">
           {SORTS.map((s) => {
             const Icon = s.icon;
@@ -143,43 +535,65 @@ export default function CommunityHome() {
             );
           })}
         </div>
+
+        {/* Category filters */}
         <div className="flex flex-wrap gap-2 mb-6">
           <button
-            onClick={() => setTag(null)}
+            onClick={() => setCategory(null)}
             className={cn(
               "px-2.5 py-1 rounded-full text-xs transition-all",
-              tag === null
+              category === null
                 ? "bg-accent/15 text-accent border border-accent/40"
                 : "border border-border text-muted hover:text-foreground"
             )}
           >
-            All tags
+            All categories
           </button>
-          {TAGS.map((t) => (
+          {categories.map((c) => (
             <button
-              key={t}
-              onClick={() => setTag(tag === t ? null : t)}
+              key={c}
+              onClick={() => setCategory(category === c ? null : c)}
               className={cn(
                 "px-2.5 py-1 rounded-full text-xs transition-all",
-                tag === t
+                category === c
                   ? "bg-accent/15 text-accent border border-accent/40"
                   : "border border-border text-muted hover:text-foreground"
               )}
             >
-              #{t}
+              {c}
             </button>
           ))}
         </div>
 
-        {/* List */}
+        {/* Question list */}
         {loading ? (
-          <div className="py-16 text-center text-muted text-sm">Loading…</div>
+          <div className="space-y-4">
+            {[0, 1, 2].map((i) => (
+              <div
+                key={i}
+                className="h-40 rounded-2xl border border-border bg-card animate-pulse"
+              />
+            ))}
+          </div>
+        ) : error ? (
+          <div className="py-16 text-center">
+            <MessageSquare
+              size={48}
+              className="text-muted mx-auto mb-4 opacity-30"
+            />
+            <p className="text-lg font-medium mb-1">Couldn’t load questions</p>
+            <p className="text-sm text-muted">{error}</p>
+          </div>
         ) : questions.length === 0 ? (
           <div className="py-16 text-center">
-            <p className="text-4xl mb-4">💬</p>
-            <p className="text-lg font-medium mb-1">No questions yet</p>
+            <MessageSquare
+              size={48}
+              className="text-muted mx-auto mb-4 opacity-30"
+            />
+            <p className="text-lg font-medium mb-1">No questions found</p>
             <p className="text-sm text-muted mb-5">
-              Be the first to start a discussion.
+              Try a different search, filter, or be the first to start a
+              discussion.
             </p>
             <Link
               href="/community/ask"
@@ -189,56 +603,22 @@ export default function CommunityHome() {
             </Link>
           </div>
         ) : (
-          <div className="space-y-3">
-            {questions.map((q, idx) => (
+          <div className="space-y-4">
+            {questions.map((thread, idx) => (
               <motion.div
-                key={q.id}
-                initial={{ opacity: 0, y: 10 }}
+                key={thread.id}
+                initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: Math.min(idx * 0.03, 0.3) }}
+                transition={{ delay: Math.min(idx * 0.05, 0.3) }}
               >
-                <Link
-                  href={`/community/${q.id}`}
-                  className="block rounded-xl border border-border bg-card p-4 hover:border-muted transition-all"
-                >
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="min-w-0">
-                      <h3 className="text-sm font-semibold leading-snug mb-1 truncate">
-                        {q.title}
-                      </h3>
-                      {q.body && (
-                        <p className="text-xs text-muted line-clamp-2 mb-2">
-                          {q.body}
-                        </p>
-                      )}
-                      <div className="flex flex-wrap items-center gap-2">
-                        {q.tags.map((t) => (
-                          <span
-                            key={t}
-                            className="text-xs text-accent/80 bg-accent/5 px-2 py-0.5 rounded-full"
-                          >
-                            #{t}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="flex flex-col items-end gap-1 text-xs text-muted shrink-0">
-                      <span className="flex items-center gap-1">
-                        <MessageSquare size={13} />
-                        {q.approvedAnswerCount}
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <Eye size={13} />
-                        {q.viewCount}
-                      </span>
-                    </div>
-                  </div>
-                </Link>
+                <QuestionCard thread={thread} />
               </motion.div>
             ))}
           </div>
         )}
       </main>
+
+      <YakshaChat />
     </div>
   );
 }

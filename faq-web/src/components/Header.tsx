@@ -10,7 +10,7 @@ import { motion, AnimatePresence } from "framer-motion";
 const navLinks = [
   { href: "/", label: "FAQ", icon: HelpCircle },
   { href: "/ask", label: "Ask", icon: MessageCircle },
-  { href: "/threads", label: "Threads", icon: MessageSquare },
+  // { href: "/threads", label: "Threads", icon: MessageSquare },
   { href: "/community", label: "Community", icon: User },
   { href: "/resolve", label: "Resolve", icon: CheckCircle },
 ];
