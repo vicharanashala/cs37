@@ -18,6 +18,7 @@
  */
 
 import { after, type NextRequest } from "next/server";
+import { ObjectId } from "mongodb";
 import { created, errors, readJson } from "@/lib/api";
 import ConnectDB from "@/lib/mongoClient";
 import { validateQuestion as ragValidate } from "@/lib/ai/ragClient";
@@ -74,21 +75,47 @@ export async function POST(req: NextRequest) {
   // ── Step 2: Fire FastAPI RAG validation after the response is sent ─────────
   // FastAPI will call MongoDB directly to update status → "approved" or
   // "rejected_by_rag" and write ragValidation details. This app does not
-  // need to poll or wait.
+  // need to poll or wait. On failure, retry up to MAX_RETRIES with backoff.
+  const MAX_RETRIES = 3;
+  const RETRY_DELAYS = [2_000, 5_000, 15_000]; // 2s, 5s, 15s
+
   after(async () => {
+    let lastErr: unknown;
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      if (attempt > 0) {
+        await new Promise((resolve) => setTimeout(resolve, RETRY_DELAYS[attempt - 1]));
+      }
+      try {
+        const ragResult = await ragValidate({
+          question_id: questionId,
+          question_text: question,
+          category,
+          institution_id: process.env.INSTITUTION_ID ?? "iit-ropar-vicharanashala",
+        });
+        if (ragResult !== null) {
+          console.log(`[ask/route] RAG validated question ${questionId} → ${ragResult.status}`);
+          return; // success
+        }
+        // null = network/timeout error, retry
+        lastErr = new Error("ragValidate returned null");
+      } catch (err) {
+        lastErr = err;
+      }
+    }
+
+    // All retries exhausted — mark as needing manual review so it doesn't get stuck
+    console.error(
+      `[ask/route] RAG validation failed permanently for question ${questionId}:`,
+      lastErr
+    );
     try {
-      await ragValidate({
-        question_id: questionId,
-        question_text: question,
-        category,
-        institution_id: process.env.INSTITUTION_ID ?? "iit-ropar-vicharanashala",
-      });
-    } catch (err) {
-      // Non-fatal — question stays "pending" for manual admin review.
-      console.error(
-        `[ask/route] RAG validation fire failed for question ${questionId}:`,
-        err
+      const client = await ConnectDB();
+      await client.db("RAG_Project").collection("pending_questions").updateOne(
+        { _id: new ObjectId(questionId) },
+        { $set: { status: "pending_manual_review", updatedAt: new Date() } }
       );
+    } catch (dbErr) {
+      console.error(`[ask/route] Failed to mark question ${questionId} for manual review:`, dbErr);
     }
   });
 
