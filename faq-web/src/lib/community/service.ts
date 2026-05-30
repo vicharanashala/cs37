@@ -132,10 +132,19 @@ export interface SummaryView {
   officialNotes: string;
   studentTips: string[];
   uncertainties: string[];
-  citations: unknown[];
+  citations: Citation[];
   status: string;
   model: string;
-  generatedAt: Date;
+  generatedAt: string;
+}
+
+interface Citation {
+  documentId: string;
+  title: string;
+  section: string;
+  version: string;
+  snippet: string;
+  score: number;
 }
 
 /**
@@ -211,7 +220,7 @@ function toView(d: {
   officialNotes: string;
   studentTips: string[];
   uncertainties: string[];
-  citations: unknown[];
+  citations: Citation[];
   status: string;
   model: string;
   generatedAt: Date;
@@ -221,10 +230,10 @@ function toView(d: {
     officialNotes: d.officialNotes,
     studentTips: d.studentTips,
     uncertainties: d.uncertainties,
-    citations: d.citations,
+    citations: d.citations as Citation[],
     status: d.status,
     model: d.model,
-    generatedAt: d.generatedAt,
+    generatedAt: d.generatedAt.toISOString(),
   };
 }
 

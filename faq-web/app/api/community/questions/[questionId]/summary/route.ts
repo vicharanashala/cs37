@@ -12,6 +12,8 @@
 import type { NextRequest } from "next/server";
 import { ok } from "@/lib/api";
 import { ensureSummary } from "@/lib/community/service";
+import { connectDB } from "@/lib/mongodb";
+import { CommunityQuestionSummary } from "@/models";
 
 export async function GET(
   _req: NextRequest,
@@ -21,7 +23,7 @@ export async function GET(
   const summary = await ensureSummary(questionId);
   if (summary === null)
     return ok({ summary: null, message: "No approved answers to summarize yet." });
-  return ok({ summary });
+  return ok(summary as unknown as Record<string, unknown>);
 }
 
 export async function POST(
@@ -29,8 +31,15 @@ export async function POST(
   ctx: { params: Promise<{ questionId: string }> }
 ) {
   const { questionId } = await ctx.params;
+  await connectDB();
+
+  const existing = await CommunityQuestionSummary.findOne({ questionId });
+  const wasAlreadyFresh = existing && existing.status === "fresh";
+
   const summary = await ensureSummary(questionId, { force: true });
   if (summary === null)
     return ok({ summary: null, message: "No approved answers to summarize yet." });
-  return ok({ summary, regenerated: true });
+
+  const regenerated = !wasAlreadyFresh;
+  return ok({ summary, regenerated });
 }

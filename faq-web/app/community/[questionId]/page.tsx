@@ -26,6 +26,7 @@ import {
   AlertTriangle,
   Eye,
   MessageSquare,
+  Bot,
 } from "lucide-react";
 import Header from "@/components/Header";
 import StatusBadge from "@/components/community/StatusBadge";
@@ -197,34 +198,45 @@ export default function QuestionDetailPage() {
         </div>
       </motion.div>
 
-      {/* Verified / synthesized summary */}
+      {/* AI-Generated Summary */}
       {summary && (
         <motion.div
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
-          className="rounded-xl border border-accent/30 bg-accent/5 p-5 mb-8"
+          className="rounded-2xl border border-purple-500/30 bg-gradient-to-br from-purple-500/5 via-background to-background p-5 mb-8 shadow-lg shadow-purple-500/5"
         >
-          <div className="flex items-center gap-2 mb-3">
-            <Sparkles size={16} className="text-accent" />
-            <span className="text-sm font-semibold text-accent">
-              Synthesized Summary
-            </span>
-            <span className="text-[10px] uppercase tracking-wide text-muted border border-border rounded px-1.5 py-0.5">
-              AI · from approved answers
-            </span>
-            {summary.status === "regenerating" && (
-              <span className="text-xs text-muted">updating…</span>
-            )}
+          <div className="flex items-center gap-3 mb-4 pb-3 border-b border-purple-500/20">
+            <div className="flex items-center justify-center w-10 h-10 rounded-full bg-purple-500/10 border border-purple-500/30">
+              <Bot size={20} className="text-purple-500" />
+            </div>
+            <div className="flex-1">
+              <div className="flex items-center gap-2">
+                <span className="text-base font-bold text-purple-600 dark:text-purple-400">
+                  AI-Generated Summary
+                </span>
+                {summary.status === "regenerating" && (
+                  <span className="text-xs text-purple-500/70 animate-pulse">updating…</span>
+                )}
+              </div>
+              <p className="text-xs text-muted">
+                Synthesized from {summary.studentTips.length + (summary.officialNotes ? 1 : 0)} approved answers
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs px-2.5 py-1 rounded-full bg-purple-500/10 border border-purple-500/30 text-purple-600 dark:text-purple-400 font-medium">
+                {summary.model || "AI"}
+              </span>
+            </div>
           </div>
 
-          <p className="text-sm leading-relaxed mb-3">{summary.summary}</p>
+          <p className="text-sm leading-relaxed mb-4 text-foreground/90">{summary.summary}</p>
 
           {summary.officialNotes && (
-            <div className="rounded-lg border border-success/30 bg-success/5 p-3 mb-3">
+            <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3 mb-3">
               <div className="flex items-center gap-1.5 mb-1">
-                <ShieldCheck size={14} className="text-success" />
-                <span className="text-xs font-medium text-success">
-                  Official policy
+                <ShieldCheck size={14} className="text-emerald-500" />
+                <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+                  Official Policy
                 </span>
               </div>
               <p className="text-xs text-foreground/80 leading-relaxed">
@@ -235,14 +247,14 @@ export default function QuestionDetailPage() {
 
           {summary.studentTips.length > 0 && (
             <div className="mb-3">
-              <p className="text-xs font-medium text-muted mb-1">
-                Community tips
+              <p className="text-xs font-semibold text-purple-600 dark:text-purple-400 mb-2 flex items-center gap-1.5">
+                <Sparkles size={12} /> Community Tips
               </p>
-              <ul className="space-y-1">
+              <ul className="space-y-1.5">
                 {summary.studentTips.map((tip, i) => (
                   <li key={i} className="text-xs text-foreground/80 flex gap-2">
-                    <span className="text-accent">•</span>
-                    {tip}
+                    <span className="text-purple-400 mt-0.5">•</span>
+                    <span>{tip}</span>
                   </li>
                 ))}
               </ul>
@@ -250,9 +262,9 @@ export default function QuestionDetailPage() {
           )}
 
           {summary.uncertainties.length > 0 && (
-            <div className="flex items-start gap-2 text-xs text-yellow-500/90">
+            <div className="flex items-start gap-2 text-xs text-amber-600/90 dark:text-amber-500/90 bg-amber-500/5 border border-amber-500/20 rounded-lg p-3">
               <AlertTriangle size={14} className="mt-0.5 shrink-0" />
-              <div>
+              <div className="space-y-1">
                 {summary.uncertainties.map((u, i) => (
                   <p key={i}>{u}</p>
                 ))}
@@ -260,17 +272,26 @@ export default function QuestionDetailPage() {
             </div>
           )}
 
-          {summary.citations.length > 0 && (
-            <div className="mt-3 pt-3 border-t border-border/50">
-              <p className="text-xs text-muted mb-1">Official sources</p>
-              {summary.citations.map((c, i) => (
-                <p key={i} className="text-xs text-muted/80 flex items-center gap-1.5">
-                  <FileText size={11} /> {c.title}{" "}
-                  <span className="opacity-60">
-                    ({c.section} · {c.version})
-                  </span>
+          {(summary.citations.length > 0 || summary.generatedAt) && (
+            <div className="mt-4 pt-3 border-t border-purple-500/20">
+              {summary.citations.length > 0 && (
+                <div className="mb-2">
+                  <p className="text-xs font-medium text-purple-600/70 dark:text-purple-400/70 mb-1.5">Official Sources</p>
+                  {summary.citations.map((c, i) => (
+                    <p key={i} className="text-xs text-muted/80 flex items-center gap-1.5">
+                      <FileText size={11} className="text-purple-400/60" /> {c.title}{" "}
+                      <span className="opacity-60">
+                        ({c.section} · {c.version})
+                      </span>
+                    </p>
+                  ))}
+                </div>
+              )}
+              {summary.generatedAt && (
+                <p className="text-[10px] text-muted/50">
+                  Generated {new Date(summary.generatedAt).toLocaleString()}
                 </p>
-              ))}
+              )}
             </div>
           )}
         </motion.div>
