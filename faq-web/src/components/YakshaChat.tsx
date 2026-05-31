@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { MessageCircle, X, Send, Bot, User, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -28,6 +28,8 @@ interface Message {
   sources?: string[];
 }
 
+const MIN_W = 300, MAX_W = 700, MIN_H = 400, MAX_H = 800;
+
 export default function YakshaChat() {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([
@@ -42,7 +44,31 @@ export default function YakshaChat() {
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const [ragStatus, setRagStatus] = useState<"online" | "offline">("online");
+  const [size, setSize] = useState({ width: 380, height: 550 });
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const dragStart = useRef<{ x: number; y: number; w: number; h: number } | null>(null);
+
+  const onResizeMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    dragStart.current = { x: e.clientX, y: e.clientY, w: size.width, h: size.height };
+
+    const onMove = (ev: MouseEvent) => {
+      if (!dragStart.current) return;
+      const dw = dragStart.current.x - ev.clientX; // dragging left = wider
+      const dh = dragStart.current.y - ev.clientY; // dragging up   = taller
+      setSize({
+        width:  Math.min(MAX_W, Math.max(MIN_W, dragStart.current.w + dw)),
+        height: Math.min(MAX_H, Math.max(MIN_H, dragStart.current.h + dh)),
+      });
+    };
+    const onUp = () => {
+      dragStart.current = null;
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  }, [size.width, size.height]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -167,8 +193,20 @@ export default function YakshaChat() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 20, scale: 0.95 }}
             transition={{ type: "spring", bounce: 0.2 }}
-            className="fixed bottom-6 right-6 z-50 w-[380px] max-w-[calc(100vw-3rem)] h-[550px] max-h-[calc(100vh-6rem)] flex flex-col rounded-2xl border border-border bg-background shadow-2xl overflow-hidden"
+            style={{ width: Math.min(size.width, window.innerWidth - 48), height: Math.min(size.height, window.innerHeight - 96) }}
+            className="fixed bottom-6 right-6 z-50 flex flex-col rounded-2xl border border-border bg-background shadow-2xl overflow-hidden"
           >
+            {/* Resize handle — drag from top-left corner */}
+            <div
+              onMouseDown={onResizeMouseDown}
+              className="absolute top-0 left-0 w-4 h-4 cursor-nw-resize z-10 group"
+              title="Drag to resize"
+            >
+              <svg width="10" height="10" viewBox="0 0 10 10" className="absolute top-1 left-1 text-muted/40 group-hover:text-accent transition-colors">
+                <path d="M0 8 L8 0 M0 4 L4 0" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+              </svg>
+            </div>
+
             {/* Chat Header */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-card">
               <div className="flex items-center gap-3">
