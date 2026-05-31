@@ -5,17 +5,17 @@
  *   GET /api/community/threads?category=NOC — filtered by category
  *
  * Uses the native MongoDB driver (ConnectDB from mongoClient.ts) to query the
- * `community` collection in the `samagama` database — the collection seeded by
- * src/lib/db/seedCommunity.ts. Each document is a full Thread, including its
- * nested `replies` array.
+ * `pending_questions` collection in the `samagama` database. Documents use
+ * the unified schema (IPendingQuestion) that includes community thread fields
+ * (originalAuthor, initialAnswer, replies, views, etc.).
  *
  * Response shape:
  *   { ok: true, threads: Thread[] }
  *
  * Thread document schema (from DB):
- *   { id, question, category, originalAuthor, authorRole, initialAnswer,
- *     answeredBy, answeredByRole, createdAt, resolvedAt, views, status,
- *     replies: Reply[] }
+ *   { _id, question, category, email (→ originalAuthor), authorRole,
+ *     initialAnswer, answeredBy, answeredByRole, createdAt, resolvedAt,
+ *     views, status, replies: Reply[] }
  */
 
 import type { NextRequest } from "next/server";
@@ -43,25 +43,24 @@ export async function GET(req: NextRequest) {
     if (category) filter.category = category;
 
     const docs = await db
-      .collection("community")
+      .collection("pending_questions")
       .find(filter)
       .sort({ createdAt: -1 })
       .toArray();
 
     const threads: Thread[] = docs.map((d) => ({
-      id: d.id as string,
+      id: String(d._id),
       question: d.question as string,
       category: d.category as string,
-      originalAuthor: d.originalAuthor as string,
-      authorRole: "user",
-      initialAnswer: d.initialAnswer as string,
-      answeredBy: d.answeredBy as string,
-      answeredByRole: d.answeredByRole as "admin" | "mentor",
-      createdAt: d.createdAt as string,
-      resolvedAt: d.resolvedAt as string,
+      originalAuthor: d.email as string,
+      authorRole: "user" as const,
+      initialAnswer: (d.initialAnswer as string | null) ?? null,
+      answeredBy: (d.answeredBy as string | null) ?? null,
+      answeredByRole: (d.answeredByRole as "admin" | "mentor" | null) ?? null,
+      createdAt: String(d.createdAt),
+      resolvedAt: d.resolvedAt ? String(d.resolvedAt) : null,
       views: (d.views as number) ?? 0,
-      status: (d.status as "open" | "resolved") ?? "resolved",
-      // Hide replies rejected by RAG moderation; pending/approved/legacy stay.
+      status: (d.status as Thread["status"]) ?? "pending",
       replies: ((d.replies as Reply[]) ?? [])
         .filter((r) => r.status !== "rejected")
         .map((r) => ({

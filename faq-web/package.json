@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "db:seed": "tsx --env-file=.env src/lib/db/seed.ts",
-    "db:seed:community": "tsx --env-file=.env src/lib/db/seedCommunity.ts"
+    "db:seed:community": "tsx --env-file=.env src/lib/db/seedCommunity.ts",
+    "db:migrate:pending-questions": "tsx --env-file=.env src/lib/db/migratePendingQuestions.ts"
   },
   "dependencies": {
     "clsx": "^2.1.1",

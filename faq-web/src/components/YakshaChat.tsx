@@ -1,11 +1,24 @@
 "use client";
 
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { MessageCircle, X, Send, Bot, User, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { faqData as staticFaqData, type FAQ } from "@/data/faqData";
-import Fuse from "fuse.js";
+
+const RAG_BASE = process.env.NEXT_PUBLIC_RAG_API ?? "http://localhost:8000";
+
+interface SourceDoc {
+  title: string;
+  section: string;
+  url: string;
+  score: number;
+  snippet: string;
+}
+
+interface QueryResponse {
+  answer: string;
+  sources: SourceDoc[];
+}
 
 interface Message {
   id: string;
@@ -15,41 +28,10 @@ interface Message {
   sources?: string[];
 }
 
-function buildAnswer(
-  query: string,
-  fuse: Fuse<FAQ>
-): { answer: string; sources: string[] } {
-  const results = fuse.search(query);
-
-  if (results.length === 0) {
-    return {
-      answer:
-        "I couldn't find a specific answer to your question in our FAQ database. Please try rephrasing your question, or submit it through the 'Ask a Question' page and our team will respond soon.",
-      sources: [],
-    };
-  }
-
-  const topResults = results.slice(0, 3);
-  const bestMatch = topResults[0].item;
-
-  let answer = bestMatch.answer;
-
-  if (topResults.length > 1) {
-    answer += "\n\n---\n\n**Related:**";
-    topResults.slice(1).forEach((r) => {
-      answer += `\n• ${r.item.question} (FAQ ${r.item.id})`;
-    });
-  }
-
-  return {
-    answer,
-    sources: topResults.map((r) => `FAQ ${r.item.id}: ${r.item.question}`),
-  };
-}
+const MIN_W = 300, MAX_W = 700, MIN_H = 400, MAX_H = 800;
 
 export default function YakshaChat() {
   const [isOpen, setIsOpen] = useState(false);
-  const [faqData, setFaqData] = useState<FAQ[]>(staticFaqData);
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "welcome",
@@ -61,17 +43,32 @@ export default function YakshaChat() {
   ]);
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
+  const [ragStatus, setRagStatus] = useState<"online" | "offline">("online");
+  const [size, setSize] = useState({ width: 380, height: 550 });
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const dragStart = useRef<{ x: number; y: number; w: number; h: number } | null>(null);
 
-  const fuse = useMemo(
-    () =>
-      new Fuse(faqData, {
-        keys: ["question", "answer", "tags"],
-        threshold: 0.4,
-        includeScore: true,
-      }),
-    [faqData]
-  );
+  const onResizeMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    dragStart.current = { x: e.clientX, y: e.clientY, w: size.width, h: size.height };
+
+    const onMove = (ev: MouseEvent) => {
+      if (!dragStart.current) return;
+      const dw = dragStart.current.x - ev.clientX; // dragging left = wider
+      const dh = dragStart.current.y - ev.clientY; // dragging up   = taller
+      setSize({
+        width:  Math.min(MAX_W, Math.max(MIN_W, dragStart.current.w + dw)),
+        height: Math.min(MAX_H, Math.max(MIN_H, dragStart.current.h + dh)),
+      });
+    };
+    const onUp = () => {
+      dragStart.current = null;
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  }, [size.width, size.height]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -81,24 +78,22 @@ export default function YakshaChat() {
     const load = async () => {
       try {
         const res = await fetch("/api/faqs");
-        const data = await res.json();
-        if (data.ok && data.faqs.length > 0) {
-          setFaqData(data.faqs);
-        }
+        if (!res.ok) throw new Error("FAQs fetch failed");
       } catch {
-        // Fall back to static data
+        // FAQ load failure is non-fatal — Yaksha will report the service as offline
       }
     };
     void load();
   }, []);
 
-  const handleSend = () => {
-    if (!input.trim()) return;
+  const handleSend = async () => {
+    const query = input.trim();
+    if (!query) return;
 
     const userMessage: Message = {
       id: Date.now().toString(),
       role: "user",
-      content: input.trim(),
+      content: query,
       timestamp: new Date(),
     };
 
@@ -106,19 +101,67 @@ export default function YakshaChat() {
     setInput("");
     setIsTyping(true);
 
-    // Simulate AI thinking delay
-    setTimeout(() => {
-      const { answer, sources } = buildAnswer(userMessage.content, fuse);
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 30_000);
+
+      const res = await fetch(`${RAG_BASE}/query`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: query }),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeout);
+
+      if (!res.ok) {
+        throw new Error(`RAG API returned ${res.status}`);
+      }
+
+      const data: QueryResponse = await res.json();
+
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: "assistant",
-        content: answer,
+        content: data.answer,
         timestamp: new Date(),
-        sources,
+        sources: data.sources.map(
+          (s) => `${s.title} (${s.section})`
+        ),
       };
       setMessages((prev) => [...prev, assistantMessage]);
+      setRagStatus("online");
+    } catch (err) {
+      if ((err as Error).name === "AbortError") {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: (Date.now() + 1).toString(),
+            role: "assistant",
+            content:
+              "Yaksha is taking too long to respond. Please try again or submit your question through the 'Ask a Question' page.",
+            timestamp: new Date(),
+            sources: [],
+          },
+        ]);
+      } else {
+        console.error("[YakshaChat] RAG /query error:", err);
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: (Date.now() + 1).toString(),
+            role: "assistant",
+            content:
+              "Yaksha is currently unavailable. Please try again in a moment, or visit the 'Ask a Question' page to submit your query.",
+            timestamp: new Date(),
+            sources: [],
+          },
+        ]);
+        setRagStatus("offline");
+      }
+    } finally {
       setIsTyping(false);
-    }, 800 + Math.random() * 700);
+    }
   };
 
   return (
@@ -150,8 +193,20 @@ export default function YakshaChat() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 20, scale: 0.95 }}
             transition={{ type: "spring", bounce: 0.2 }}
-            className="fixed bottom-6 right-6 z-50 w-[380px] max-w-[calc(100vw-3rem)] h-[550px] max-h-[calc(100vh-6rem)] flex flex-col rounded-2xl border border-border bg-background shadow-2xl overflow-hidden"
+            style={{ width: Math.min(size.width, window.innerWidth - 48), height: Math.min(size.height, window.innerHeight - 96) }}
+            className="fixed bottom-6 right-6 z-50 flex flex-col rounded-2xl border border-border bg-background shadow-2xl overflow-hidden"
           >
+            {/* Resize handle — drag from top-left corner */}
+            <div
+              onMouseDown={onResizeMouseDown}
+              className="absolute top-0 left-0 w-4 h-4 cursor-nw-resize z-10 group"
+              title="Drag to resize"
+            >
+              <svg width="10" height="10" viewBox="0 0 10 10" className="absolute top-1 left-1 text-muted/40 group-hover:text-accent transition-colors">
+                <path d="M0 8 L8 0 M0 4 L4 0" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+              </svg>
+            </div>
+
             {/* Chat Header */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-card">
               <div className="flex items-center gap-3">
@@ -160,9 +215,17 @@ export default function YakshaChat() {
                 </div>
                 <div>
                   <h3 className="text-sm font-semibold">Yaksha</h3>
-                  <p className="text-xs text-success flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-success inline-block" />
-                    Online · Answers from FAQ
+                  <p className="text-xs flex items-center gap-1">
+                    <span
+                      className={cn(
+                        "w-1.5 h-1.5 rounded-full inline-block",
+                        ragStatus === "online" ? "bg-success" : "bg-danger"
+                      )}
+                    />
+                    <span className={ragStatus === "online" ? "text-success" : "text-danger"}>
+                      {ragStatus === "online" ? "Online" : "Offline"}
+                    </span>
+                    <span className="text-muted"> · RAG-powered</span>
                   </p>
                 </div>
               </div>
@@ -206,7 +269,7 @@ export default function YakshaChat() {
                         <p className="text-xs text-muted mb-1">Sources:</p>
                         {msg.sources.map((s, i) => (
                           <p key={i} className="text-xs text-muted/70">
-                            📄 {s}
+                            {s}
                           </p>
                         ))}
                       </div>
@@ -246,7 +309,7 @@ export default function YakshaChat() {
               <form
                 onSubmit={(e) => {
                   e.preventDefault();
-                  handleSend();
+                  void handleSend();
                 }}
                 className="flex items-center gap-2"
               >
@@ -260,12 +323,12 @@ export default function YakshaChat() {
                 />
                 <button
                   type="submit"
-                  disabled={!input.trim()}
+                  disabled={!input.trim() || isTyping}
                   className={cn(
                     "p-2.5 rounded-xl transition-all",
-                    input.trim()
+                    input.trim() && !isTyping
                       ? "bg-accent text-background hover:bg-accent-hover"
-                      : "bg-card text-muted border border-border"
+                      : "bg-card text-muted border border-border cursor-not-allowed"
                   )}
                   aria-label="Send message"
                 >
@@ -273,7 +336,7 @@ export default function YakshaChat() {
                 </button>
               </form>
               <p className="text-center text-xs text-muted mt-2">
-                Answers sourced from official FAQ · v22.1.0
+                Powered by RAG · Vicharanashala FAQ
               </p>
             </div>
           </motion.div>
