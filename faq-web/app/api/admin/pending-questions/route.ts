@@ -17,6 +17,7 @@ import { ok, errors, readJson } from "@/lib/api";
 import { isAdmin } from "@/lib/community/identity";
 
 const COLLECTION = "pending_questions";
+const DB_NAME = process.env.MONGODB_DB ?? "samagama";
 
 type PendingQuestionDoc = WithId<Document>;
 
@@ -24,7 +25,7 @@ export async function GET(req: NextRequest) {
   if (!isAdmin(req)) return errors.forbidden("Admin key required");
 
   const client = await ConnectDB();
-  const db = client.db("RAG_Project");
+  const db = client.db(DB_NAME);
   const sp = req.nextUrl.searchParams;
   const filterStatus = sp.get("status") ?? "pending";
 
@@ -77,7 +78,7 @@ export async function POST(req: NextRequest) {
   }
 
   const client = await ConnectDB();
-  const db = client.db("RAG_Project");
+  const db = client.db(DB_NAME);
 
   const resolvedAnswer =
     action === "resolve" ? (answer as string).trim() : null;
@@ -86,6 +87,9 @@ export async function POST(req: NextRequest) {
     updatedAt: new Date(),
     status: action === "resolve" ? "resolved" : "rejected",
     answer: resolvedAnswer,
+    initialAnswer: resolvedAnswer,
+    answeredBy: req.headers.get("x-admin-key") ?? "admin",
+    answeredByRole: "admin",
     resolvedAt: new Date(),
     resolvedBy: req.headers.get("x-admin-key") ?? "admin",
   };

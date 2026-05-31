@@ -60,8 +60,9 @@ TOP_K            = 5   # number of chunks to retrieve per query
 # /validate-question payload carries no discriminator, so we update both;
 # only the collection actually holding the _id matches (the other is a no-op).
 QUESTION_COLLECTIONS = [
-    ("RAG_Project", "pending_questions"),    # written by /api/ask
-    ("samagama",    "community_questions"),  # written by /api/community/questions
+    ("samagama", "community_questions"),  # unified community Q&A source of truth (where CommunityQuestion model stores)
+    ("samagama", "pending_questions"),    # legacy admin-only DB (kept for audit)
+    ("RAG_Project", "pending_questions"), # legacy
 ]
 
 # ── App state (loaded once at startup) ───────────────────────────────────────

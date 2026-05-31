@@ -23,6 +23,8 @@ import { created, errors, readJson } from "@/lib/api";
 import ConnectDB from "@/lib/mongoClient";
 import { validateQuestion as ragValidate } from "@/lib/ai/ragClient";
 
+const DB_NAME = process.env.MONGODB_DB ?? "samagama";
+
 export async function POST(req: NextRequest) {
   const body = await readJson<{
     question?: unknown;
@@ -52,7 +54,7 @@ export async function POST(req: NextRequest) {
 
   // ── Step 1: Persist via native MongoDB driver (insertOne) ─────────────────
   const client = await ConnectDB();
-  const db = client.db("RAG_Project");
+  const db = client.db(DB_NAME);
 
   const result = await db.collection("pending_questions").insertOne({
     question,
@@ -68,6 +70,13 @@ export async function POST(req: NextRequest) {
     resolvedAt: null,
     createdAt: new Date(),
     updatedAt: new Date(),
+    // Unified community thread fields
+    authorRole: "user",
+    initialAnswer: null,
+    answeredBy: null,
+    answeredByRole: null,
+    views: 0,
+    replies: [],
   });
 
   const questionId = String(result.insertedId);
@@ -110,7 +119,7 @@ export async function POST(req: NextRequest) {
     );
     try {
       const client = await ConnectDB();
-      await client.db("RAG_Project").collection("pending_questions").updateOne(
+      await client.db(DB_NAME).collection("pending_questions").updateOne(
         { _id: new ObjectId(questionId) },
         { $set: { status: "pending_manual_review", updatedAt: new Date() } }
       );

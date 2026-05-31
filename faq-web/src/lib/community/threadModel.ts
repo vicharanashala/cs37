@@ -45,12 +45,12 @@ export interface Thread {
   category: string;
   originalAuthor: string;
   authorRole: "user";
-  initialAnswer: string;
-  answeredBy: string;
-  answeredByRole: "admin" | "mentor";
+  initialAnswer: string | null;
+  answeredBy: string | null;
+  answeredByRole: "admin" | "mentor" | null;
   createdAt: string;
-  resolvedAt: string;
+  resolvedAt: string | null;
   replies: Reply[];
   views: number;
-  status: "open" | "resolved";
+  status: "pending" | "pending_rag" | "approved" | "rejected_by_rag" | "open" | "resolved" | "rejected";
 }

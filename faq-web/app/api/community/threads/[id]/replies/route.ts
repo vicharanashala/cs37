@@ -3,10 +3,9 @@
  *
  *   POST /api/community/threads/:id/replies
  *
- * Appends a reply to a specific thread (question) in the `community`
- * collection of the `samagama` database — the collection seeded by
- * src/lib/db/seedCommunity.ts. The reply is `$push`ed onto the document's
- * nested `replies` array, so it is persisted exactly like the seeded replies.
+ * Appends a reply to a specific thread (question) in the `pending_questions`
+ * collection of the `samagama` database. The reply is `$push`ed onto the
+ * document's nested `replies` array.
  *
  * Flow:
  *   1. Validate + `$push` the reply with status "pending".
@@ -32,7 +31,7 @@
 
 import { randomUUID } from "node:crypto";
 import { after, type NextRequest } from "next/server";
-import type { UpdateFilter } from "mongodb";
+import { ObjectId, type UpdateFilter } from "mongodb";
 import ConnectDB from "@/lib/mongoClient";
 import { created, errors, readJson } from "@/lib/api";
 import { validateReply } from "@/lib/ai/ragClient";
@@ -43,7 +42,7 @@ const MAX_CONTENT_LENGTH = 4000;
 const ROLES = ["admin", "mentor", "user"] as const;
 
 interface ThreadDoc {
-  _id: string;
+  _id: ObjectId;
   question: string;
   replies: Reply[];
 }
@@ -106,9 +105,9 @@ export async function POST(
     const db = client.db(DB_NAME);
     // Push the reply and grab the thread's question text for moderation context.
     const thread = await db
-      .collection<ThreadDoc>("community")
+      .collection<ThreadDoc>("pending_questions")
       .findOneAndUpdate(
-        { _id: id },
+        { _id: new ObjectId(id) },
         { $push: { replies: reply } },
         { returnDocument: "before", projection: { question: 1 } }
       );
@@ -147,8 +146,8 @@ export async function POST(
         } as unknown as UpdateFilter<ThreadDoc>;
 
         await db
-          .collection<ThreadDoc>("community")
-          .updateOne({ _id: id }, update, {
+          .collection<ThreadDoc>("pending_questions")
+          .updateOne({ _id: new ObjectId(id) }, update, {
             arrayFilters: [{ "r.id": reply.id }],
           });
       } catch (err) {
