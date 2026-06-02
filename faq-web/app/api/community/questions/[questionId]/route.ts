@@ -44,6 +44,7 @@ export async function GET(
   const approved = await CommunityAnswer.find({
     questionId,
     status: "approved",
+    authorStudentId: { $ne: "bot:helper" },
   })
     .sort({ voteScore: -1, createdAt: 1 })
     .lean<ICommunityAnswer[]>();
@@ -79,6 +80,26 @@ export async function GET(
     })
   );
 
+  const botAnswer = await CommunityAnswer.findOne({
+    questionId,
+    authorStudentId: "bot:helper",
+  }).lean<ICommunityAnswer>();
+  const suggestedAnswer =
+    botAnswer?.status === "approved"
+      ? serializeAnswer(botAnswer as never, {
+          studentId: student?.studentId ?? null,
+          isAdmin: admin,
+        })
+      : null;
+  const suggestedAnswerStatus =
+    suggestedAnswer
+      ? "ready"
+      : botAnswer || question.status === "rejected_by_rag"
+        ? "unavailable"
+        : ["pending_rag", "approved", "open"].includes(question.status)
+          ? "generating"
+          : "unavailable";
+
   // Summary: serve cached if fresh; otherwise regenerate in the background.
   const summaryDoc = await CommunityQuestionSummary.findOne({ questionId }).lean();
   const summaryFresh =
@@ -98,6 +119,8 @@ export async function GET(
   return ok({
     question: serializeQuestion(question as never),
     answers,
+    suggestedAnswer,
+    suggestedAnswerStatus,
     summary: summaryDoc
       ? {
           summary: summaryDoc.summary,
