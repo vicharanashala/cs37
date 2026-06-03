@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { MessageCircle, HelpCircle, CheckCircle, Menu, X, MessageSquare, User, LogOut } from "lucide-react";
+import { MessageCircle, HelpCircle, CheckCircle, Menu, X, MessageSquare, User, LogOut, Shield } from "lucide-react";
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/context/AuthContext";
@@ -13,7 +13,8 @@ const navLinks = [
   { href: "/ask", label: "Ask", icon: MessageCircle },
   // { href: "/threads", label: "Threads", icon: MessageSquare },
   { href: "/community", label: "Community", icon: User },
-  { href: "/resolve", label: "Resolve", icon: CheckCircle },
+  { href: "/resolve", label: "Profile", icon: CheckCircle },
+  { href: "/admin", label: "Admin", icon: Shield },
 ];
 
 export default function Header() {
@@ -86,6 +87,14 @@ export default function Header() {
                       exit={{ opacity: 0, y: -4 }}
                       className="absolute right-0 mt-2 w-48 rounded-xl border border-border bg-card shadow-lg overflow-hidden"
                     >
+                      <Link
+                        href="/resolve"
+                        onClick={() => setUserMenuOpen(false)}
+                        className="w-full flex items-center gap-2 px-4 py-3 text-sm text-muted hover:text-foreground hover:bg-card-hover transition-colors"
+                      >
+                        <User size={14} />
+                        My Profile
+                      </Link>
                       <button
                         onClick={() => {
                           signOut();
