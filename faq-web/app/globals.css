@@ -1,6 +1,7 @@
 @import "tailwindcss";
 
-:root {
+:root,
+.dark {
   --background: #0a0a0a;
   --foreground: #ededed;
   --card: #141414;
@@ -11,6 +12,19 @@
   --muted: #737373;
   --success: #22c55e;
   --danger: #ef4444;
+}
+
+.light {
+  --background: #f9f9f9;
+  --foreground: #111111;
+  --card: #ffffff;
+  --card-hover: #f0f0f0;
+  --border: #e0e0e0;
+  --accent: #d97706;
+  --accent-hover: #b45309;
+  --muted: #888888;
+  --success: #16a34a;
+  --danger: #dc2626;
 }
 
 @theme inline {

@@ -1,4 +1,7 @@
 "use client";
+import { Sun, Moon } from "lucide-react";  // add Sun, Moon to existing lucide import
+import { useTheme } from "./ThemeProvider";
+import NotificationBell from "./NotificationBell";
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -18,6 +21,7 @@ const navLinks = [
 export default function Header() {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const { theme, toggleTheme } = useTheme();
 
   return (
     <header className="sticky top-0 z-50 border-b border-border bg-background/80 backdrop-blur-xl">
@@ -62,11 +66,53 @@ export default function Header() {
           </nav>
 
           {/* Version Badge */}
-          <div className="hidden md:flex items-center gap-3">
-            <span className="text-xs text-muted bg-card px-2.5 py-1 rounded-full border border-border">
-              v2.0.0
-            </span>
-          </div>
+          {/* Right side actions */}
+<div className="flex items-center gap-2">
+  <NotificationBell />
+
+  <button
+    onClick={toggleTheme}
+    className="p-2 rounded-lg hover:bg-card transition-colors"
+    aria-label="Toggle theme"
+  >
+    <AnimatePresence mode="wait" initial={false}>
+      {theme === "dark" ? (
+        <motion.span
+          key="sun"
+          initial={{ rotate: -90, opacity: 0 }}
+          animate={{ rotate: 0, opacity: 1 }}
+          exit={{ rotate: 90, opacity: 0 }}
+          transition={{ duration: 0.2 }}
+        >
+          <Sun size={18} className="text-muted" />
+        </motion.span>
+      ) : (
+        <motion.span
+          key="moon"
+          initial={{ rotate: 90, opacity: 0 }}
+          animate={{ rotate: 0, opacity: 1 }}
+          exit={{ rotate: -90, opacity: 0 }}
+          transition={{ duration: 0.2 }}
+        >
+          <Moon size={18} className="text-muted" />
+        </motion.span>
+      )}
+    </AnimatePresence>
+  </button>
+
+  <span className="hidden md:inline-flex text-xs text-muted bg-card px-2.5 py-1 rounded-full border border-border">
+    v2.0.0
+  </span>
+
+  {/* Mobile Menu Button stays here */}
+  <button
+    onClick={() => setMobileOpen(!mobileOpen)}
+    className="md:hidden p-2 rounded-lg hover:bg-card transition-colors"
+    aria-label="Toggle menu"
+  >
+    {mobileOpen ? <X size={20} /> : <Menu size={20} />}
+  </button>
+</div>
 
           {/* Mobile Menu Button */}
           <button

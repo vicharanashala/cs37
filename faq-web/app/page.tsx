@@ -9,7 +9,8 @@ import CategoryFilter from "@/components/CategoryFilter";
 import FAQCard from "@/components/FAQCard";
 import YakshaChat from "@/components/YakshaChat";
 import type { FAQ, Category } from "@/data/faqData";
-import { BookOpen, TrendingUp, Users, Loader2 } from "lucide-react";
+import { BookOpen, TrendingUp, Users } from "lucide-react";
+import { FAQPageSkeleton } from "@/components/Skeletons";
 
 export default function FAQPage() {
   const [faqData, setFaqData] = useState<FAQ[]>([]);
@@ -117,11 +118,11 @@ export default function FAQPage() {
     <div className="min-h-screen bg-background">
       <Header />
 
-      {loading && (
-        <div className="flex items-center justify-center py-32">
-          <Loader2 className="animate-spin text-muted" size={32} />
-        </div>
-      )}
+     {loading && (
+  <div className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8 py-8">
+    <FAQPageSkeleton />
+  </div>
+)}
 
       {error && !loading && (
         <div className="flex flex-col items-center justify-center py-32 gap-2">

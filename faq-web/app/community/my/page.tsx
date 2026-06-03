@@ -14,6 +14,7 @@ import { motion } from "framer-motion";
 import { MessageSquare, HelpCircle } from "lucide-react";
 import Header from "@/components/Header";
 import StatusBadge from "@/components/community/StatusBadge";
+import { MyContributionsSkeleton } from "@/components/Skeletons";
 import { api } from "@/lib/community/client";
 import type { AnswerDTO, QuestionDTO } from "@/lib/community/types";
 
@@ -45,8 +46,8 @@ export default function MyContributionsPage() {
           My <span className="text-accent">Contributions</span>
         </motion.h1>
 
-        {loading ? (
-          <div className="py-16 text-center text-muted text-sm">Loading…</div>
+          {loading ? (
+  <MyContributionsSkeleton />
         ) : (
           <div className="space-y-10">
             {/* Questions */}

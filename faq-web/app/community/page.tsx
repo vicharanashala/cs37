@@ -35,6 +35,7 @@ import {
   X,
 } from "lucide-react";
 import Header from "@/components/Header";
+import { CommunityPageSkeleton } from "@/components/Skeletons";
 import YakshaChat from "@/components/YakshaChat";
 import { cn } from "@/lib/utils";
 import type { Thread, Reply } from "@/lib/community/threadModel";
@@ -601,15 +602,8 @@ export default function CommunityHome() {
         </div>
 
         {/* Question list */}
-        {loading ? (
-          <div className="space-y-4">
-            {[0, 1, 2].map((i) => (
-              <div
-                key={i}
-                className="h-40 rounded-2xl border border-border bg-card animate-pulse"
-              />
-            ))}
-          </div>
+          {loading ? (
+  <CommunityPageSkeleton />
         ) : error ? (
           <div className="py-16 text-center">
             <MessageSquare
