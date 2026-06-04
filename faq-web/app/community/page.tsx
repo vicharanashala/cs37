@@ -315,20 +315,30 @@ function QuestionCard({ thread: initialThread }: { thread: Thread }) {
 
     setSubmitting(true);
     try {
-      const res = await fetch(`/api/community/threads/${thread.id}/replies`, {
+      const res = await fetch(`/api/community/questions/${thread.id}/answers`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content }),
+        body: JSON.stringify({ body: content }),
       });
       const json = await res.json();
       if (!res.ok || !json.ok) {
         throw new Error(json?.error?.message ?? "Failed to post reply");
       }
 
-      // Use the reply the server actually saved (id + timestamp from DB).
+      // Map answer→reply shape so the UI stays consistent.
+      const saved = json.answer as { id: string; author: string; authorRole: "user"; body: string; timestamp: string; likes: number; status: string };
+      const newReply: Reply = {
+        id: saved.id,
+        author: saved.author,
+        authorRole: saved.authorRole,
+        content: saved.body,
+        timestamp: saved.timestamp,
+        likes: saved.likes,
+        status: saved.status as Reply["status"],
+      };
       setThread({
         ...thread,
-        replies: [...thread.replies, json.reply as Reply],
+        replies: [...thread.replies, newReply],
       });
       setReplyText("");
       setShowReplyForm(false);
@@ -379,10 +389,12 @@ function QuestionCard({ thread: initialThread }: { thread: Thread }) {
               )}
             </div>
 
-            {/* Title */}
-            <h3 className="text-base sm:text-lg font-semibold leading-snug mb-2">
-              {thread.question}
-            </h3>
+            {/* Title — navigates to the detail page */}
+            <Link href={`/community/${thread.id}`}>
+              <h3 className="text-base sm:text-lg font-semibold leading-snug mb-2 hover:text-accent transition-colors cursor-pointer">
+                {thread.question}
+              </h3>
+            </Link>
 
             {/* Meta row */}
             <div className="flex items-center gap-4 text-xs text-muted flex-wrap">
@@ -451,6 +463,13 @@ function QuestionCard({ thread: initialThread }: { thread: Thread }) {
 
         {/* Footer: reply button always visible */}
         <div className="mt-4 flex items-center gap-2">
+          <Link
+            href={`/community/${thread.id}`}
+            className="flex items-center gap-1 text-xs text-muted hover:text-accent transition-colors mr-auto"
+          >
+            <Eye size={12} />
+            View full thread
+          </Link>
           {humanReplies.length > 0 && (
             <button
               onClick={() => setExpanded(!expanded)}
@@ -575,7 +594,7 @@ export default function CommunityHome() {
 
     (async () => {
       try {
-        const res = await fetch("/api/community/threads");
+        const res = await fetch("/api/community/questions");
         const json = await res.json();
         if (cancelled) return;
         if (!res.ok || !json.ok) {
