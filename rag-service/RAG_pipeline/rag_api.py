@@ -239,22 +239,36 @@ def retrieve(question: str, top_k: int) -> list[dict]:
     return chunks
 
 
+MAX_CHUNK_PROMPT_CHARS = 300  # ~75 tokens — keeps prompt lean, LLM focused
+
+
 def build_prompt(question: str, chunks: list[dict]) -> str:
     """
     Build the RAG prompt: inject retrieved chunks as context.
-    Instructs Gemini to answer ONLY from the provided context.
+    Each chunk is truncated to MAX_CHUNK_PROMPT_CHARS so the prompt stays
+    tight and the LLM produces focused, concise answers.
     """
     context_blocks = []
     for i, chunk in enumerate(chunks):
-        context_blocks.append(
-            f"[Source {i+1}: {chunk['title']}]\n{chunk['content']}"
-        )
-    context = "\n\n---\n\n".join(context_blocks)
+        content = chunk["content"]
+        # Truncate if needed, breaking on sentence boundary when possible
+        if len(content) > MAX_CHUNK_PROMPT_CHARS:
+            truncated = content[:MAX_CHUNK_PROMPT_CHARS]
+            # Break at last sentence-ending punctuation
+            last_punct = max(truncated.rfind(". "), truncated.rfind(".\n"))
+            if last_punct > MAX_CHUNK_PROMPT_CHARS // 2:
+                truncated = truncated[:last_punct + 1]
+            else:
+                truncated = truncated.rstrip() + "…"
+            content = truncated
+        context_blocks.append(f"[Source {i+1}: {chunk['title']}]\n{content}")
 
-    return f"""You are a helpful assistant for the Vicharanashala Internship programme at IIT Ropar.
+    context = "\n\n".join(context_blocks)
+
+    return f"""You are a concise FAQ assistant for the Vicharanashala Internship programme at IIT Ropar.
 Answer the user's question using ONLY the context provided below.
-If the answer is not in the context, say: "I don't have information about that. Please contact support via the Yaksha chat at samagama.in."
-Be concise, friendly, and accurate. Do not make up information.
+If the answer is not in the context, say: "I don't have information about that."
+Keep your answer brief — 2-4 sentences maximum. Do not elaborate beyond the context.
 
 CONTEXT:
 {context}
@@ -264,14 +278,14 @@ QUESTION: {question}
 ANSWER:"""
 
 
-def generate_answer(prompt: str) -> str:
+def generate_answer(prompt: str, max_tokens: int = 300) -> str:
     """Call Gemini to generate an answer from the RAG prompt."""
     response = app_state["gemini"].models.generate_content(
         model    = GENERATION_MODEL,
         contents = prompt,
         config   = types.GenerateContentConfig(
-            temperature      = 0.1,   # low temp = factual, less creative
-            max_output_tokens= 512,
+            temperature       = 0.1,   # low temp = factual, less creative
+            max_output_tokens = max_tokens,
         ),
     )
     return response.text.strip()
@@ -543,9 +557,9 @@ def rag_query(req: QueryRequest):
             confidence = 0.0,
         )
 
-    # Generate
+    # Generate — capped at 200 tokens (~500 chars) for concise chat replies
     prompt = build_prompt(req.question, chunks)
-    answer = generate_answer(prompt)
+    answer = generate_answer(prompt, max_tokens=200)
 
     # Build source citations
     # Deduplicate by URL (multiple chunks can come from same doc)
@@ -554,12 +568,16 @@ def rag_query(req: QueryRequest):
     for chunk in chunks:
         if chunk["url"] not in seen_urls:
             seen_urls.add(chunk["url"])
+            # Snippet: first 120 chars of content, break on word boundary
+            raw_snippet = chunk["content"][:120].rsplit(" ", 1)[0].rstrip()
+            if len(chunk["content"]) > 120:
+                raw_snippet += "…"
             sources.append(SourceDoc(
                 title   = chunk["title"],
                 section = chunk["section"],
                 url     = chunk["url"],
                 score   = chunk["score"],
-                snippet = chunk["content"][:200] + "...",
+                snippet = raw_snippet,
             ))
 
     avg_confidence = round(sum(c["score"] for c in chunks) / len(chunks), 4)
