@@ -25,8 +25,12 @@ export { default as CommunityQuestionSummary } from "./CommunityQuestionSummary"
 export { default as CommunityVote } from "./CommunityVote";
 export { default as CommunityReport } from "./CommunityReport";
 
+// ─── FAQ reply model (stage 1 of faq-revamp) ──────────────────────────────────
+export { default as FAQReply } from "./FAQReply";
+
 // Re-export interfaces for convenience in API route typing
 export type { IFAQ } from "./FAQ";
+export type { IFAQReply } from "./FAQReply";
 export type { ICategory } from "./Category";
 export type { IPendingQuestion, QuestionStatus, QuestionPriority } from "./PendingQuestion";
 export type { IChatSession, IChatMessage, MessageRole } from "./ChatSession";
