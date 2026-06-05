@@ -43,6 +43,8 @@ export async function POST(
   await connectDB();
   const answer = await CommunityAnswer.findById(answerId).lean<ICommunityAnswer>();
   if (!answer) return errors.notFound("Answer not found");
+  if (answer.authorStudentId === "bot:helper")
+    return errors.forbidden("AI suggested answers cannot be voted on");
   if (answer.status !== "approved")
     return errors.forbidden("Only approved answers can be voted on");
 

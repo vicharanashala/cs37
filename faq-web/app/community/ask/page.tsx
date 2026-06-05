@@ -9,22 +9,18 @@
  */
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { Send, Lightbulb, AlertCircle, ArrowRight } from "lucide-react";
+import { Send, Lightbulb, AlertCircle, CheckCircle, ArrowRight } from "lucide-react";
 import Header from "@/components/Header";
 import { cn } from "@/lib/utils";
-import { api } from "@/lib/community/client";
-import type { QuestionDTO } from "@/lib/community/types";
 
 export default function CommunityAskPage() {
-  const router = useRouter();
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [tagsRaw, setTagsRaw] = useState("");
   const [error, setError] = useState("");
-  const [duplicate, setDuplicate] = useState<QuestionDTO | null>(null);
+  const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -34,7 +30,6 @@ export default function CommunityAskPage() {
       return;
     }
     setError("");
-    setDuplicate(null);
     setSubmitting(true);
 
     const tags = tagsRaw
@@ -42,23 +37,60 @@ export default function CommunityAskPage() {
       .map((t) => t.trim())
       .filter(Boolean);
 
-    const res = await api("/api/community/questions", {
-      method: "POST",
-      body: JSON.stringify({ title: title.trim(), body: body.trim(), tags }),
-    });
-    setSubmitting(false);
+    // Unified flow: questions live in `pending_questions` (the community feed).
+    // They appear on /community once approved, with an AI helper reply attached.
+    const question = body.trim()
+      ? `${title.trim()}\n\n${body.trim()}`
+      : title.trim();
 
-    // Check duplicate first — the 409 response also carries ok:true + question.
-    if ((res as { duplicate?: boolean }).duplicate && res.question) {
-      setDuplicate(res.question as QuestionDTO);
-      return;
+    try {
+      const res = await fetch("/api/ask", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question, category: tags[0] ?? "General" }),
+      });
+      const json = await res.json();
+      if (json.ok) {
+        setSubmitted(true);
+        return;
+      }
+      setError(json?.error?.message ?? "Something went wrong. Try again.");
+    } catch {
+      setError("Something went wrong. Try again.");
+    } finally {
+      setSubmitting(false);
     }
-    if (res.ok && res.question) {
-      router.push(`/community/${(res.question as QuestionDTO).id}`);
-      return;
-    }
-    setError(res.error?.message ?? "Something went wrong. Try again.");
   };
+
+  if (submitted) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Header />
+        <main className="mx-auto max-w-2xl px-4 sm:px-6 py-16">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="rounded-2xl border border-success/30 bg-success/5 p-8 text-center"
+          >
+            <CheckCircle size={40} className="text-success mx-auto mb-4" />
+            <h1 className="text-xl font-bold mb-2">Question submitted</h1>
+            <p className="text-sm text-muted mb-6">
+              Our AI system is reviewing your question. Once approved it will
+              appear on the Community page with an AI helper answer — other
+              interns can reply there too.
+            </p>
+            <Link
+              href="/community"
+              className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-accent text-background font-medium hover:bg-accent-hover transition-colors"
+            >
+              Go to Community
+              <ArrowRight size={16} />
+            </Link>
+          </motion.div>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -128,27 +160,6 @@ export default function CommunityAskPage() {
               <div className="flex items-center gap-2 text-sm text-danger bg-danger/10 border border-danger/30 rounded-xl px-4 py-3">
                 <AlertCircle size={16} />
                 {error}
-              </div>
-            )}
-
-            {duplicate && (
-              <div className="rounded-xl border border-accent/30 bg-accent/5 p-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <Lightbulb size={16} className="text-accent" />
-                  <span className="text-sm font-medium text-accent">
-                    A similar question already exists
-                  </span>
-                </div>
-                <Link
-                  href={`/community/${duplicate.id}`}
-                  className="flex items-center gap-2 p-2.5 rounded-lg bg-background/50 hover:bg-background border border-border/50 transition-all group"
-                >
-                  <span className="flex-1 text-sm">{duplicate.title}</span>
-                  <ArrowRight
-                    size={14}
-                    className="text-muted group-hover:text-accent transition-colors"
-                  />
-                </Link>
               </div>
             )}
 

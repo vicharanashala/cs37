@@ -22,10 +22,20 @@ export interface ReplyModeration {
   reviewedAt: string;
 }
 
+/** A grounding source attached to an AI helper-bot reply. */
+export interface ReplySource {
+  type: "rag" | "web";
+  title: string;
+  url: string;
+  snippet: string;
+  score: number;
+}
+
 export interface Reply {
   id: string;
   author: string;
-  authorRole: "admin" | "user" | "mentor";
+  /** "bot" is the AI helper answer — rendered like a reply but styled apart. */
+  authorRole: "admin" | "user" | "mentor" | "bot";
   content: string;
   timestamp: string;
   likes: number;
@@ -37,6 +47,8 @@ export interface Reply {
   status?: "pending" | "approved" | "rejected";
   /** Present once RAG moderation has run. */
   moderation?: ReplyModeration;
+  /** Present only on bot replies: the RAG/web sources used to ground them. */
+  sources?: ReplySource[];
 }
 
 export interface Thread {

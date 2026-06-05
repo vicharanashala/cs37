@@ -22,6 +22,7 @@ import { ObjectId } from "mongodb";
 import { created, errors, readJson } from "@/lib/api";
 import ConnectDB from "@/lib/mongoClient";
 import { validateQuestion as ragValidate } from "@/lib/ai/ragClient";
+import { generateBotReply } from "@/lib/community/botReply";
 
 const DB_NAME = process.env.MONGODB_DB ?? "samagama";
 
@@ -103,6 +104,22 @@ export async function POST(req: NextRequest) {
         });
         if (ragResult !== null) {
           console.log(`[ask/route] RAG validated question ${questionId} → ${ragResult.status}`);
+          // Once approved, generate the AI helper-bot answer and store it as a
+          // reply on the question so it shows on the community page.
+          if (ragResult.status === "approved") {
+            try {
+              await generateBotReply({
+                questionId,
+                questionText: question,
+                category,
+              });
+            } catch (botErr) {
+              console.error(
+                `[ask/route] Bot reply generation failed for ${questionId}:`,
+                botErr
+              );
+            }
+          }
           return; // success
         }
         // null = network/timeout error, retry

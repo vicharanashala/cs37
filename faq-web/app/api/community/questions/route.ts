@@ -28,6 +28,7 @@ import { normalizeTitle, questionHash } from "@/lib/community/text";
 import { serializeQuestion } from "@/lib/community/serialize";
 import { INSTITUTION_ID, RATE_LIMITS } from "@/lib/community/constants";
 import { validateQuestion as ragValidate } from "@/lib/ai/ragClient";
+import { runBotAnswerGeneration } from "@/lib/community/service";
 
 export async function GET(req: NextRequest) {
   await connectDB();
@@ -125,12 +126,15 @@ export async function POST(req: NextRequest) {
   // This Next.js app does NOT poll or wait for the result.
   after(async () => {
     try {
-      await ragValidate({
+      const ragResult = await ragValidate({
         question_id: questionId,
         question_text: `${v.value.title}\n${v.value.body ?? ""}`.trim(),
         category: v.value.tags?.[0],
         institution_id: INSTITUTION_ID,
       });
+      if (ragResult?.status === "approved") {
+        await runBotAnswerGeneration(questionId);
+      }
     } catch (err) {
       // Non-fatal — question stays pending_rag for manual admin review.
       console.error(
@@ -148,4 +152,3 @@ export async function POST(req: NextRequest) {
     question: serializeQuestion(doc.toObject() as never),
   });
 }
-

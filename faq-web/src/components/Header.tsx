@@ -4,11 +4,12 @@ import { useTheme } from "./ThemeProvider";
 import NotificationBell from "./NotificationBell";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { MessageCircle, HelpCircle, CheckCircle, Menu, X, MessageSquare, User } from "lucide-react";
+import { MessageCircle, HelpCircle, CheckCircle, Menu, X, MessageSquare, User, LogOut } from "lucide-react";
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useAuth } from "@/context/AuthContext";
 
 const navLinks = [
   { href: "/", label: "FAQ", icon: HelpCircle },
@@ -20,7 +21,10 @@ const navLinks = [
 
 export default function Header() {
   const pathname = usePathname();
+  const router = useRouter();
+  const { user, signOut } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
   const { theme, toggleTheme } = useTheme();
 
   return (
@@ -65,63 +69,89 @@ export default function Header() {
             })}
           </nav>
 
-          {/* Version Badge */}
-          {/* Right side actions */}
-<div className="flex items-center gap-2">
-  <NotificationBell />
+          <div className="flex items-center gap-2">
+            <NotificationBell />
 
-  <button
-    onClick={toggleTheme}
-    className="p-2 rounded-lg hover:bg-card transition-colors"
-    aria-label="Toggle theme"
-  >
-    <AnimatePresence mode="wait" initial={false}>
-      {theme === "dark" ? (
-        <motion.span
-          key="sun"
-          initial={{ rotate: -90, opacity: 0 }}
-          animate={{ rotate: 0, opacity: 1 }}
-          exit={{ rotate: 90, opacity: 0 }}
-          transition={{ duration: 0.2 }}
-        >
-          <Sun size={18} className="text-muted" />
-        </motion.span>
-      ) : (
-        <motion.span
-          key="moon"
-          initial={{ rotate: 90, opacity: 0 }}
-          animate={{ rotate: 0, opacity: 1 }}
-          exit={{ rotate: -90, opacity: 0 }}
-          transition={{ duration: 0.2 }}
-        >
-          <Moon size={18} className="text-muted" />
-        </motion.span>
-      )}
-    </AnimatePresence>
-  </button>
+            <button
+              onClick={toggleTheme}
+              className="p-2 rounded-lg hover:bg-card transition-colors"
+              aria-label="Toggle theme"
+            >
+              <AnimatePresence mode="wait" initial={false}>
+                {theme === "dark" ? (
+                  <motion.span
+                    key="sun"
+                    initial={{ rotate: -90, opacity: 0 }}
+                    animate={{ rotate: 0, opacity: 1 }}
+                    exit={{ rotate: 90, opacity: 0 }}
+                    transition={{ duration: 0.2 }}
+                  >
+                    <Sun size={18} className="text-muted" />
+                  </motion.span>
+                ) : (
+                  <motion.span
+                    key="moon"
+                    initial={{ rotate: 90, opacity: 0 }}
+                    animate={{ rotate: 0, opacity: 1 }}
+                    exit={{ rotate: -90, opacity: 0 }}
+                    transition={{ duration: 0.2 }}
+                  >
+                    <Moon size={18} className="text-muted" />
+                  </motion.span>
+                )}
+              </AnimatePresence>
+            </button>
 
-  <span className="hidden md:inline-flex text-xs text-muted bg-card px-2.5 py-1 rounded-full border border-border">
-    v2.0.0
-  </span>
+            <span className="hidden md:inline-flex text-xs text-muted bg-card px-2.5 py-1 rounded-full border border-border">
+              v2.0.0
+            </span>
 
-  {/* Mobile Menu Button stays here */}
-  <button
-    onClick={() => setMobileOpen(!mobileOpen)}
-    className="md:hidden p-2 rounded-lg hover:bg-card transition-colors"
-    aria-label="Toggle menu"
-  >
-    {mobileOpen ? <X size={20} /> : <Menu size={20} />}
-  </button>
-</div>
+            <div className="hidden md:flex items-center gap-3">
+              {user ? (
+                <div className="relative">
+                  <button
+                    onClick={() => setUserMenuOpen(!userMenuOpen)}
+                    className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-border bg-card hover:bg-card-hover transition-colors"
+                  >
+                    <div className="h-6 w-6 rounded-full bg-accent text-background flex items-center justify-center text-xs font-bold">
+                      {user.email[0].toUpperCase()}
+                    </div>
+                    <span className="text-xs text-muted max-w-32 truncate">{user.email}</span>
+                  </button>
+                  <AnimatePresence>
+                    {userMenuOpen && (
+                      <motion.div
+                        initial={{ opacity: 0, y: -4 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -4 }}
+                        className="absolute right-0 mt-2 w-48 rounded-xl border border-border bg-card shadow-lg overflow-hidden"
+                      >
+                        <button
+                          onClick={() => {
+                            signOut();
+                            router.replace("/auth/signin");
+                            setUserMenuOpen(false);
+                          }}
+                          className="w-full flex items-center gap-2 px-4 py-3 text-sm text-muted hover:text-foreground hover:bg-card-hover transition-colors"
+                        >
+                          <LogOut size={14} />
+                          Sign Out
+                        </button>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              ) : null}
+            </div>
 
-          {/* Mobile Menu Button */}
-          <button
-            onClick={() => setMobileOpen(!mobileOpen)}
-            className="md:hidden p-2 rounded-lg hover:bg-card transition-colors"
-            aria-label="Toggle menu"
-          >
-            {mobileOpen ? <X size={20} /> : <Menu size={20} />}
-          </button>
+            <button
+              onClick={() => setMobileOpen(!mobileOpen)}
+              className="md:hidden p-2 rounded-lg hover:bg-card transition-colors"
+              aria-label="Toggle menu"
+            >
+              {mobileOpen ? <X size={20} /> : <Menu size={20} />}
+            </button>
+          </div>
         </div>
       </div>
 

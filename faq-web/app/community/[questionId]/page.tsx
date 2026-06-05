@@ -26,6 +26,9 @@ import {
   AlertTriangle,
   Eye,
   MessageSquare,
+  Bot,
+  ExternalLink,
+  Globe2,
 } from "lucide-react";
 import Header from "@/components/Header";
 import StatusBadge from "@/components/community/StatusBadge";
@@ -34,7 +37,10 @@ import { api } from "@/lib/community/client";
 import type {
   AnswerDTO,
   Capabilities,
+  Citation,
   QuestionDTO,
+  SuggestedAnswerDTO,
+  SuggestedAnswerStatus,
   SummaryDTO,
 } from "@/lib/community/types";
 
@@ -53,6 +59,9 @@ export default function QuestionDetailPage() {
 
   const [question, setQuestion] = useState<QuestionDTO | null>(null);
   const [answers, setAnswers] = useState<AnswerDTO[]>([]);
+  const [suggestedAnswer, setSuggestedAnswer] = useState<SuggestedAnswerDTO | null>(null);
+  const [suggestedAnswerStatus, setSuggestedAnswerStatus] =
+    useState<SuggestedAnswerStatus>("unavailable");
   const [summary, setSummary] = useState<SummaryDTO | null>(null);
   const [caps, setCaps] = useState<Capabilities | null>(null);
   const [loading, setLoading] = useState(true);
@@ -62,6 +71,7 @@ export default function QuestionDetailPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitMsg, setSubmitMsg] = useState("");
   const [pollsLeft, setPollsLeft] = useState(0);
+  const [suggestedPollsLeft, setSuggestedPollsLeft] = useState(15);
 
   const load = useCallback(async () => {
     const res = await api(`/api/community/questions/${questionId}`);
@@ -72,6 +82,10 @@ export default function QuestionDetailPage() {
     }
     setQuestion(res.question as QuestionDTO);
     setAnswers((res.answers as AnswerDTO[]) ?? []);
+    setSuggestedAnswer((res.suggestedAnswer as SuggestedAnswerDTO) ?? null);
+    setSuggestedAnswerStatus(
+      (res.suggestedAnswerStatus as SuggestedAnswerStatus) ?? "unavailable"
+    );
     setSummary((res.summary as SummaryDTO) ?? null);
     setCaps(res.capabilities as Capabilities);
     setLoading(false);
@@ -97,6 +111,16 @@ export default function QuestionDetailPage() {
     }, 2000);
     return () => clearTimeout(t);
   }, [pollsLeft, load]);
+
+  // New questions redirect here immediately. Poll briefly while the helper-bot
+  // answer is generated, then leave a refresh hint instead of polling forever.
+  useEffect(() => {
+    if (suggestedAnswerStatus !== "generating" || suggestedPollsLeft <= 0) return;
+    const t = setTimeout(() => {
+      void load().then(() => setSuggestedPollsLeft((n) => n - 1));
+    }, 2000);
+    return () => clearTimeout(t);
+  }, [suggestedAnswerStatus, suggestedPollsLeft, load]);
 
   const submitAnswer = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -196,6 +220,17 @@ export default function QuestionDetailPage() {
           </span>
         </div>
       </motion.div>
+
+      {suggestedAnswerStatus === "generating" && (
+        <SuggestedAnswerSkeleton timedOut={suggestedPollsLeft <= 0} />
+      )}
+
+      {suggestedAnswer && (
+        <SuggestedAnswerCard
+          answer={suggestedAnswer}
+          canReport={!!caps?.canReport}
+        />
+      )}
 
       {/* Verified / synthesized summary */}
       {summary && (
@@ -374,6 +409,175 @@ export default function QuestionDetailPage() {
         )}
       </div>
     </Shell>
+  );
+}
+
+function SuggestedAnswerSkeleton({ timedOut }: { timedOut: boolean }) {
+  return (
+    <div className="rounded-xl border border-accent/30 bg-accent/5 p-5 mb-8">
+      <div className="flex items-center gap-2 mb-3">
+        <Bot size={16} className="text-accent" />
+        <span className="text-sm font-semibold text-accent">AI Suggested Answer</span>
+      </div>
+      {timedOut ? (
+        <p className="text-sm text-muted">
+          Suggested answer is still being generated. Refresh shortly.
+        </p>
+      ) : (
+        <div className="space-y-2 animate-pulse">
+          <div className="h-3 rounded bg-accent/15 w-full" />
+          <div className="h-3 rounded bg-accent/15 w-5/6" />
+          <div className="h-3 rounded bg-accent/15 w-2/3" />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SuggestedAnswerCard({
+  answer,
+  canReport,
+}: {
+  answer: SuggestedAnswerDTO;
+  canReport: boolean;
+}) {
+  const officialSources = answer.citations.filter((c) => (c.sourceType ?? "rag") === "rag");
+  const webSources = answer.citations.filter((c) => c.sourceType === "web");
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="rounded-xl border border-accent/30 bg-accent/5 p-5 mb-8"
+    >
+      <div className="flex flex-wrap items-center gap-2 mb-3">
+        <Bot size={16} className="text-accent" />
+        <span className="text-sm font-semibold text-accent">AI Suggested Answer</span>
+        <span className="text-[10px] uppercase tracking-wide text-muted border border-border rounded px-1.5 py-0.5">
+          Generated from official FAQ sources and web search
+        </span>
+      </div>
+      <p className="text-sm leading-relaxed whitespace-pre-line">{answer.body}</p>
+
+      {(officialSources.length > 0 || webSources.length > 0) && (
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <SourceGroup
+            title="Official sources"
+            icon={<ShieldCheck size={13} className="text-success" />}
+            sources={officialSources}
+          />
+          <SourceGroup
+            title="Web sources"
+            icon={<Globe2 size={13} className="text-accent" />}
+            sources={webSources}
+          />
+        </div>
+      )}
+
+      <div className="mt-3">
+        <ReportControl answerId={answer.id} canReport={canReport} />
+      </div>
+    </motion.div>
+  );
+}
+
+function SourceGroup({
+  title,
+  icon,
+  sources,
+}: {
+  title: string;
+  icon: React.ReactNode;
+  sources: Citation[];
+}) {
+  if (sources.length === 0) return null;
+
+  return (
+    <div className="rounded-lg border border-border/70 bg-background/50 p-3">
+      <div className="flex items-center gap-1.5 mb-1.5">
+        {icon}
+        <span className="text-xs font-medium">{title}</span>
+      </div>
+      <div className="space-y-1.5">
+        {sources.map((source, i) => (
+          <a
+            key={`${source.documentId}-${i}`}
+            href={source.documentId}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-start gap-1.5 text-xs text-muted hover:text-accent transition-colors"
+          >
+            <ExternalLink size={11} className="mt-0.5 shrink-0" />
+            <span>{source.title || source.documentId}</span>
+          </a>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ReportControl({
+  answerId,
+  canReport,
+}: {
+  answerId: string;
+  canReport: boolean;
+}) {
+  const [reporting, setReporting] = useState(false);
+  const [reason, setReason] = useState("incorrect_policy");
+  const [reported, setReported] = useState(false);
+
+  const submitReport = async () => {
+    const res = await api(`/api/community/answers/${answerId}/report`, {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+    });
+    if (res.ok) {
+      setReported(true);
+      setReporting(false);
+    }
+  };
+
+  return (
+    <>
+      {canReport && !reported && (
+        <button
+          onClick={() => setReporting((v) => !v)}
+          className="flex items-center gap-1 text-xs text-muted hover:text-danger transition-colors"
+        >
+          <Flag size={12} /> Report
+        </button>
+      )}
+      {reported && <span className="text-xs text-muted">Reported — thank you.</span>}
+      <AnimatePresence>
+        {reporting && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            className="mt-3 flex flex-wrap items-center gap-2 overflow-hidden"
+          >
+            <select
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              className="bg-background border border-border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-accent"
+            >
+              {REPORT_REASONS.map((r) => (
+                <option key={r.value} value={r.value}>
+                  {r.label}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={submitReport}
+              className="text-xs px-3 py-1.5 rounded-lg bg-danger/10 text-danger border border-danger/30 hover:bg-danger/20 transition-colors"
+            >
+              Submit report
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </>
   );
 }
 

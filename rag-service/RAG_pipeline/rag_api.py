@@ -5,13 +5,14 @@ Step 6: FastAPI RAG Query Endpoint
 ────────────────────────────────────────────────────────────────────────────
 
 Run:
-  uvicorn rag_api:app --reload --port 8000
+  .venv/bin/uvicorn rag_api:app --reload --port 8000
 
 Endpoints:
   POST /query             ->  RAG: retrieve chunks + generate answer with Gemini
   GET  /search            ->  Pure vector search (no LLM, returns raw chunks)
   POST /validate-question ->  Moderate a submitted question + write verdict to MongoDB
   POST /validate-reply    ->  Moderate a community reply (stateless verdict)
+  POST /generate-answer   ->  AI helper bot: generate answer from RAG + web search
   GET  /health            ->  Health check
 
 Your MERN frontend / backend calls POST /query with:
@@ -30,6 +31,8 @@ import re
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Optional
+
+from ddgs import DDGS
 
 import chromadb
 from chromadb.config import Settings
@@ -177,6 +180,27 @@ class QuestionValidationResponse(BaseModel):
     reason:      str
     model:       str
 
+
+class GenerateAnswerRequest(BaseModel):
+    question_id:     str
+    question_text:   str
+    category:        Optional[str] = None
+    institution_id:  Optional[str] = None
+
+
+class AnswerSource(BaseModel):
+    type:    str   # "rag" | "web"
+    title:   str
+    url:     str
+    snippet: str
+    score:   float
+
+
+class GenerateAnswerResponse(BaseModel):
+    answer:  str
+    sources: list[AnswerSource]
+    model:   str
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def embed_query(question: str) -> list[float]:
@@ -250,6 +274,73 @@ def generate_answer(prompt: str) -> str:
         ),
     )
     return response.text.strip()
+
+
+def do_web_search(question: str, top_k: int = 3) -> list[dict]:
+    """
+    Search the web via DuckDuckGo for general knowledge not in the RAG corpus.
+    Returns a list of dicts with title, url, snippet, score (0-1 confidence).
+    Fails open: returns [] on any error, logging a warning.
+    """
+    try:
+        with DDGS() as ddgs:
+            results = list(ddgs.text(question, max_results=top_k))
+        out = []
+        for r in results:
+            out.append({
+                "title":   r.get("title", ""),
+                "url":     r.get("href", ""),
+                "snippet": r.get("body", ""),
+                "score":   0.8,   # DuckDuckGo doesn't give relevance scores
+            })
+        return out
+    except Exception as err:
+        print(f"[WARN] Web search failed for '{question}': {err}")
+        return []
+
+
+def build_answer_prompt(question: str, rag_chunks: list[dict], web_results: list[dict]) -> str:
+    """
+    Build the answer-generation prompt that merges RAG context and web results.
+    Prioritises institutional sources; uses web for general knowledge.
+    """
+    rag_blocks = []
+    for i, chunk in enumerate(rag_chunks):
+        rag_blocks.append(
+            f"[RAG {i+1}: {chunk['title']}]\n{chunk['content']}"
+        )
+    rag_context = "\n\n---\n\n".join(rag_blocks) if rag_blocks else "(No institutional sources found.)"
+
+    web_blocks = []
+    for i, r in enumerate(web_results):
+        web_blocks.append(
+            f"[Web {i+1}: {r['title']}]\n{r['snippet']}\nSource: {r['url']}"
+        )
+    web_context = "\n\n---\n\n".join(web_blocks) if web_blocks else "(No web results found.)"
+
+    return f"""You are a helpful assistant for the Vicharanashala Internship programme at IIT Ropar.
+
+When answering, prioritise the INSTITUTIONAL SOURCES (RAG) section below — use them for any question about the internship programme, application process, NOC, offer letter, ViBe proctoring, mentorship, rules, deadlines, or student life at IIT Ropar.
+
+Use the WEB SEARCH RESULTS section only for general knowledge not covered by the institutional sources (e.g. how to write a resume, general career advice, exam preparation tips, etc.).
+
+If neither source contains relevant information, say: "I don't have enough information about that. Please contact support via the Yaksha chat at samagama.in."
+
+Be concise, friendly, and accurate. Do not make up information. Cite your sources in your answer when using web results (e.g. "According to [Web 1], ...").
+
+════════════════════════════════════════
+INSTITUTIONAL SOURCES (RAG):
+{rag_context}
+════════════════════════════════════════
+
+════════════════════════════════════════
+WEB SEARCH RESULTS:
+{web_context}
+════════════════════════════════════════
+
+QUESTION: {question}
+
+ANSWER:"""
 
 
 # Allowed violation labels the moderator may emit.
@@ -531,6 +622,53 @@ def validate_question(req: QuestionValidationRequest):
         reason      = result["reason"],
         model       = GENERATION_MODEL,
     )
+
+
+@app.post("/generate-answer", response_model=GenerateAnswerResponse)
+def generate_bot_answer(req: GenerateAnswerRequest):
+    """
+    Generate an AI helper answer for a community forum question using
+    dual knowledge sources: institutional RAG corpus + real-time web search.
+
+    Used by the Next.js backend to auto-generate a pinned bot answer for
+    every new question in the community forum.
+    """
+    text = req.question_text.strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Question text cannot be empty")
+
+    rag_chunks  = retrieve(text, top_k=TOP_K)
+    web_results = do_web_search(text, top_k=3)
+
+    prompt      = build_answer_prompt(text, rag_chunks, web_results)
+    answer_text = generate_answer(prompt)
+
+    sources: list[AnswerSource] = []
+    seen_urls: set[str] = set()
+
+    for chunk in rag_chunks:
+        if chunk["url"] not in seen_urls:
+            seen_urls.add(chunk["url"])
+            sources.append(AnswerSource(
+                type    = "rag",
+                title   = chunk["title"],
+                url     = chunk["url"],
+                snippet = chunk["content"][:200] + "...",
+                score   = chunk["score"],
+            ))
+
+    for r in web_results:
+        if r["url"] not in seen_urls:
+            seen_urls.add(r["url"])
+            sources.append(AnswerSource(
+                type    = "web",
+                title   = r["title"],
+                url     = r["url"],
+                snippet = r["snippet"][:200] + "...",
+                score   = r["score"],
+            ))
+
+    return GenerateAnswerResponse(answer=answer_text, sources=sources, model=GENERATION_MODEL)
 
 
 @app.get("/search", response_model=SearchResponse)

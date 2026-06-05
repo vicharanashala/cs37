@@ -155,3 +155,69 @@ export async function validateReply(
     return null;
   }
 }
+
+/** Shape of the payload sent to FastAPI POST /generate-answer */
+export interface GenerateAnswerPayload {
+  question_id: string;
+  question_text: string;
+  category?: string;
+  institution_id?: string;
+}
+
+/** A single source used to ground the generated answer */
+export interface AnswerSource {
+  type: "rag" | "web";
+  title: string;
+  url: string;
+  snippet: string;
+  score: number;
+}
+
+/** Shape of the response from FastAPI POST /generate-answer */
+export interface GenerateAnswerResult {
+  answer: string;
+  sources: AnswerSource[];
+  model: string;
+}
+
+/**
+ * Call FastAPI's /generate-answer endpoint to produce an AI helper answer
+ * using dual knowledge: institutional RAG corpus + real-time web search.
+ */
+export async function generateBotAnswer(
+  payload: GenerateAnswerPayload
+): Promise<GenerateAnswerResult | null> {
+  const url = `${RAG_BASE}/generate-answer`;
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30_000);
+
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeout);
+
+    if (!res.ok) {
+      console.error(
+        `[ragClient] /generate-answer returned ${res.status} for question ${payload.question_id}`
+      );
+      return null;
+    }
+
+    return (await res.json()) as GenerateAnswerResult;
+  } catch (err) {
+    if ((err as Error).name === "AbortError") {
+      console.error(
+        `[ragClient] /generate-answer timed out for question ${payload.question_id}`
+      );
+    } else {
+      console.error(`[ragClient] /generate-answer error:`, err);
+    }
+    return null;
+  }
+}

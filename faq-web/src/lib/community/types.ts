@@ -14,6 +14,7 @@ export interface Citation {
   version: string;
   snippet: string;
   score: number;
+  sourceType?: "rag" | "web";
 }
 
 export interface QuestionDTO {
@@ -57,6 +58,9 @@ export interface AnswerDTO {
   createdAt: string;
   questionTitle?: string;
 }
+
+export type SuggestedAnswerDTO = AnswerDTO;
+export type SuggestedAnswerStatus = "generating" | "ready" | "unavailable";
 
 export interface SummaryDTO {
   summary: string;

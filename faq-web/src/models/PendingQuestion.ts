@@ -38,15 +38,27 @@ export interface ReplyModeration {
   reviewedAt: string;
 }
 
+/** A grounding source attached to an AI helper-bot reply. */
+export interface ReplySource {
+  type: "rag" | "web";
+  title: string;
+  url: string;
+  snippet: string;
+  score: number;
+}
+
 export interface Reply {
   id: string;
   author: string;
-  authorRole: "admin" | "user" | "mentor";
+  /** "bot" is the AI helper answer — rendered like a reply but styled apart. */
+  authorRole: "admin" | "user" | "mentor" | "bot";
   content: string;
   timestamp: string;
   likes: number;
   status?: "pending" | "approved" | "rejected";
   moderation?: ReplyModeration;
+  /** Present only on bot replies: the RAG/web sources used to ground them. */
+  sources?: ReplySource[];
 }
 
 export interface IPendingQuestion extends Document {
@@ -94,11 +106,22 @@ const ReplyModerationSchema = new Schema<ReplyModeration>(
   { _id: false }
 );
 
+const ReplySourceSchema = new Schema<ReplySource>(
+  {
+    type:    { type: String, enum: ["rag", "web"], required: true },
+    title:   { type: String, default: "" },
+    url:     { type: String, default: "" },
+    snippet: { type: String, default: "" },
+    score:   { type: Number, default: 0 },
+  },
+  { _id: false }
+);
+
 const ReplySchema = new Schema<Reply>(
   {
     id:         { type: String, required: true },
     author:     { type: String, default: "Anonymous Student" },
-    authorRole: { type: String, enum: ["admin", "user", "mentor"], default: "user" },
+    authorRole: { type: String, enum: ["admin", "user", "mentor", "bot"], default: "user" },
     content:    { type: String, required: true },
     timestamp:  { type: String, required: true },
     likes:      { type: Number, default: 0, min: 0 },
@@ -107,6 +130,7 @@ const ReplySchema = new Schema<Reply>(
       enum: ["pending", "approved", "rejected"],
     },
     moderation: { type: ReplyModerationSchema, default: undefined },
+    sources:    { type: [ReplySourceSchema], default: undefined },
   },
   { _id: false }
 );

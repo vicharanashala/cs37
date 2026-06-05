@@ -25,6 +25,7 @@ export interface ICitation {
   version: string;
   snippet: string;
   score: number;
+  sourceType?: "rag" | "web";
 }
 
 export interface IAnswerReview {
@@ -68,6 +69,7 @@ const CitationSchema = new Schema<ICitation>(
     version: { type: String, default: "" },
     snippet: { type: String, default: "" },
     score: { type: Number, default: 0 },
+    sourceType: { type: String, enum: ["rag", "web"], default: "rag" },
   },
   { _id: false }
 );

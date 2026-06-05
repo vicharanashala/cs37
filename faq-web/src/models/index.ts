@@ -14,6 +14,9 @@ export { default as FAQ } from "./FAQ";
 export { default as Category } from "./Category";
 export { default as PendingQuestion } from "./PendingQuestion";
 export { default as ChatSession } from "./ChatSession";
+export { default as User } from "./User";
+
+export type { IUser } from "./User";
 
 // ─── Community Q&A models ─────────────────────────────────────────────────────
 export { default as CommunityQuestion } from "./CommunityQuestion";

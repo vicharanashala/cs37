@@ -39,7 +39,12 @@ export async function GET(req: NextRequest) {
   try {
     const db = client.db(DB_NAME);
 
-    const filter: Record<string, unknown> = {};
+    // Only surface questions that cleared moderation. Pending / rejected /
+    // manual-review questions stay hidden from the public feed. "open" and
+    // "resolved" are legacy approved-equivalent states from seeded data.
+    const filter: Record<string, unknown> = {
+      status: { $in: ["approved", "open", "resolved"] },
+    };
     if (category) filter.category = category;
 
     const docs = await db
@@ -72,6 +77,7 @@ export async function GET(req: NextRequest) {
           likes: r.likes ?? 0,
           status: r.status,
           moderation: r.moderation,
+          sources: r.sources,
         })),
     }));
 

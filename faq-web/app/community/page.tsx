@@ -33,12 +33,18 @@ import {
   ChevronDown,
   Mail,
   X,
+  Bot,
+  Sparkles,
+  ShieldCheck,
+  Globe2,
+  ExternalLink,
 } from "lucide-react";
 import Header from "@/components/Header";
 import { CommunityPageSkeleton } from "@/components/Skeletons";
 import YakshaChat from "@/components/YakshaChat";
+import StatusBadge from "@/components/community/StatusBadge";
 import { cn } from "@/lib/utils";
-import type { Thread, Reply } from "@/lib/community/threadModel";
+import type { Thread, Reply, ReplySource } from "@/lib/community/threadModel";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -77,6 +83,13 @@ const roleConfig = {
     bg: "bg-card",
     border: "border-border",
   },
+  bot: {
+    label: "AI Helper",
+    icon: Bot,
+    color: "text-violet-400",
+    bg: "bg-violet-500/10",
+    border: "border-violet-500/30",
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -87,6 +100,8 @@ function ReplyCard({ reply }: { reply: Reply }) {
   const [liked, setLiked] = useState(false);
   const config = roleConfig[reply.authorRole];
   const Icon = config.icon;
+
+  const statusBadgeStatus = reply.status === "pending" ? "pending_review" : reply.status;
 
   return (
     <motion.div
@@ -122,6 +137,9 @@ function ReplyCard({ reply }: { reply: Reply }) {
             >
               {config.label}
             </span>
+            {reply.status && (
+              <StatusBadge status={statusBadgeStatus as never} />
+            )}
             <span className="text-xs text-muted">· {reply.timestamp}</span>
           </div>
           <p className="text-sm leading-relaxed text-foreground/90">
@@ -148,6 +166,94 @@ function ReplyCard({ reply }: { reply: Reply }) {
 }
 
 // ---------------------------------------------------------------------------
+// BotReplyCard — the AI helper answer, styled apart from human replies
+// ---------------------------------------------------------------------------
+
+function BotSourceLinks({
+  title,
+  icon,
+  sources,
+}: {
+  title: string;
+  icon: React.ReactNode;
+  sources: ReplySource[];
+}) {
+  if (sources.length === 0) return null;
+  return (
+    <div className="rounded-lg border border-border/60 bg-background/40 p-2.5">
+      <div className="flex items-center gap-1.5 mb-1.5">
+        {icon}
+        <span className="text-xs font-medium">{title}</span>
+      </div>
+      <div className="space-y-1">
+        {sources.map((s, i) => (
+          <a
+            key={`${s.url}-${i}`}
+            href={s.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-start gap-1.5 text-xs text-muted hover:text-violet-400 transition-colors"
+          >
+            <ExternalLink size={11} className="mt-0.5 shrink-0" />
+            <span>{s.title || s.url}</span>
+          </a>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function BotReplyCard({ reply }: { reply: Reply }) {
+  const sources = reply.sources ?? [];
+  const ragSources = sources.filter((s) => (s.type ?? "rag") === "rag");
+  const webSources = sources.filter((s) => s.type === "web");
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="rounded-xl border border-violet-500/30 bg-gradient-to-br from-violet-500/10 to-accent/5 p-4"
+    >
+      <div className="flex items-start gap-3">
+        <div className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-violet-500/15 border border-violet-500/30">
+          <Bot size={15} className="text-violet-400" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+            <span className="text-sm font-semibold">{reply.author}</span>
+            <span className="text-xs px-1.5 py-0.5 rounded-full font-medium bg-violet-500/10 text-violet-400 flex items-center gap-1">
+              <Sparkles size={10} />
+              AI Helper
+            </span>
+            <span className="text-[10px] uppercase tracking-wide text-muted border border-border rounded px-1.5 py-0.5">
+              From FAQ + web sources
+            </span>
+          </div>
+          <p className="text-sm leading-relaxed text-foreground/90 whitespace-pre-line">
+            {reply.content}
+          </p>
+
+          {(ragSources.length > 0 || webSources.length > 0) && (
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              <BotSourceLinks
+                title="Official sources"
+                icon={<ShieldCheck size={12} className="text-success" />}
+                sources={ragSources}
+              />
+              <BotSourceLinks
+                title="Web sources"
+                icon={<Globe2 size={12} className="text-violet-400" />}
+                sources={webSources}
+              />
+            </div>
+          )}
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // QuestionCard — full ThreadCard UI: real answer + real replies
 // ---------------------------------------------------------------------------
 
@@ -161,6 +267,10 @@ function QuestionCard({ thread: initialThread }: { thread: Thread }) {
   const answerConfig = roleConfig[thread.answeredByRole ?? "admin"];
   const AnswerIcon = answerConfig.icon;
   const resolved = thread.status === "resolved";
+
+  // The AI helper answer is pinned above the human reply chain.
+  const botReply = thread.replies.find((r) => r.authorRole === "bot");
+  const humanReplies = thread.replies.filter((r) => r.authorRole !== "bot");
 
   const handleAddReply = async () => {
     const content = replyText.trim();
@@ -253,12 +363,19 @@ function QuestionCard({ thread: initialThread }: { thread: Thread }) {
               </span>
               <span className="flex items-center gap-1">
                 <MessageCircle size={12} />
-                {thread.replies.length}{" "}
-                {thread.replies.length === 1 ? "reply" : "replies"}
+                {humanReplies.length}{" "}
+                {humanReplies.length === 1 ? "reply" : "replies"}
               </span>
             </div>
           </div>
         </div>
+
+        {/* AI helper answer — pinned, always visible, styled apart */}
+        {botReply && (
+          <div className="mt-3">
+            <BotReplyCard reply={botReply} />
+          </div>
+        )}
 
         {/* Initial Answer */}
         {/*<div
@@ -297,15 +414,15 @@ function QuestionCard({ thread: initialThread }: { thread: Thread }) {
 
         {/* Footer: reply button always visible */}
         <div className="mt-4 flex items-center gap-2">
-          {thread.replies.length > 0 && (
+          {humanReplies.length > 0 && (
             <button
               onClick={() => setExpanded(!expanded)}
               className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl border border-border hover:border-accent/50 hover:bg-accent/5 transition-all text-sm text-muted hover:text-accent"
             >
               <MessageCircle size={14} />
               <span>
-                {expanded ? "Hide" : "Show"} {thread.replies.length}{" "}
-                {thread.replies.length === 1 ? "reply" : "replies"}
+                {expanded ? "Hide" : "Show"} {humanReplies.length}{" "}
+                {humanReplies.length === 1 ? "reply" : "replies"}
               </span>
               <motion.span animate={{ rotate: expanded ? 180 : 0 }}>
                 <ChevronDown size={14} />
@@ -317,7 +434,7 @@ function QuestionCard({ thread: initialThread }: { thread: Thread }) {
               onClick={() => setShowReplyForm(true)}
               className={cn(
                 "flex items-center gap-2 py-2.5 rounded-xl border border-dashed border-border hover:border-accent hover:bg-accent/5 transition-all text-sm text-muted hover:text-accent",
-                thread.replies.length === 0 && "flex-1",
+                humanReplies.length === 0 && "flex-1",
               )}
             >
               <Send size={14} />
@@ -384,7 +501,7 @@ function QuestionCard({ thread: initialThread }: { thread: Thread }) {
 
       {/* Replies panel (shown when expanded) */}
       <AnimatePresence>
-        {expanded && thread.replies.length > 0 && (
+        {expanded && humanReplies.length > 0 && (
           <motion.div
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: "auto", opacity: 1 }}
@@ -392,7 +509,7 @@ function QuestionCard({ thread: initialThread }: { thread: Thread }) {
             className="overflow-hidden border-t border-border bg-background/50"
           >
             <div className="p-5 space-y-3">
-              {thread.replies.map((reply) => (
+              {humanReplies.map((reply) => (
                 <ReplyCard key={reply.id} reply={reply} />
               ))}
             </div>

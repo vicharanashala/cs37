@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, useCallback, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import Fuse from "fuse.js";
 import Header from "@/components/Header";
@@ -8,301 +9,310 @@ import SearchBar from "@/components/SearchBar";
 import CategoryFilter from "@/components/CategoryFilter";
 import FAQCard from "@/components/FAQCard";
 import YakshaChat from "@/components/YakshaChat";
+import { useAuth } from "@/context/AuthContext";
 import type { FAQ, Category } from "@/data/faqData";
 import { BookOpen, TrendingUp, Users } from "lucide-react";
 import { FAQPageSkeleton } from "@/components/Skeletons";
 
 export default function FAQPage() {
+  const router = useRouter();
+  const { token, loading: authLoading } = useAuth();
   const [faqData, setFaqData] = useState<FAQ[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const res = await fetch("/api/faqs");
-        const data = await res.json();
-        console.log("database data", data);
-        if (data.ok) {
-          setFaqData(data.faqs);
-          setCategories(data.categories);
-        } else {
-          throw setError("Failed to load FAQs");
+  useEffect(() =>  {
+      if (!authLoading && !token) {
+        router.replace("/auth/signin");
+      }
+    }, [authLoading, token, router]);
+
+    useEffect(() => {
+      const load = async () => {
+        try {
+          const res = await fetch("/api/faqs");
+          const data = await res.json();
+          console.log("database data", data);
+          if (data.ok) {
+            setFaqData(data.faqs);
+            setCategories(data.categories);
+          } else {
+            throw setError("Failed to load FAQs");
+          }
+        } catch {
+          setError("Could not connect to server");
+        } finally {
+          setLoading(false);
         }
-      } catch {
-        setError("Could not connect to server");
-      } finally {
-        setLoading(false);
+      };
+      load();
+    }, []);
+
+    const liveFuse = useMemo(
+      () =>
+        new Fuse(faqData, {
+          keys: [
+            { name: "question", weight: 0.5 },
+            { name: "answer", weight: 0.3 },
+            { name: "tags", weight: 0.2 },
+          ],
+          threshold: 0.35,
+          includeScore: true,
+        }),
+      [faqData],
+    );
+
+    const [searchQuery, setSearchQuery] = useState("");
+    const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
+    const [openFAQs, setOpenFAQs] = useState<Set<string>>(new Set());
+
+    const filteredFAQs = useMemo(() => {
+      let results = faqData;
+
+      if (searchQuery.trim()) {
+        const fuseResults = liveFuse.search(searchQuery);
+        results = fuseResults.map((r) => r.item);
       }
+
+      if (selectedCategory !== null) {
+        results = results.filter((faq) => faq.categoryId === selectedCategory);
+      }
+
+      return results;
+    }, [faqData, searchQuery, selectedCategory, liveFuse]);
+
+    const toggleFAQ = useCallback((id: string) => {
+      setOpenFAQs((prev) => {
+        const next = new Set(prev);
+        if (next.has(id)) {
+          next.delete(id);
+        } else {
+          next.add(id);
+        }
+        return next;
+      });
+    }, []);
+
+    const expandAll = () => {
+      setOpenFAQs(new Set(filteredFAQs.map((f) => f.id)));
     };
-    load();
-  }, []);
 
-  const liveFuse = useMemo(
-    () =>
-      new Fuse(faqData, {
-        keys: [
-          { name: "question", weight: 0.5 },
-          { name: "answer", weight: 0.3 },
-          { name: "tags", weight: 0.2 },
-        ],
-        threshold: 0.35,
-        includeScore: true,
-      }),
-    [faqData],
-  );
+    const collapseAll = () => {
+      setOpenFAQs(new Set());
+    };
 
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
-  const [openFAQs, setOpenFAQs] = useState<Set<string>>(new Set());
-
-  const filteredFAQs = useMemo(() => {
-    let results = faqData;
-
-    if (searchQuery.trim()) {
-      const fuseResults = liveFuse.search(searchQuery);
-      results = fuseResults.map((r) => r.item);
-    }
-
-    if (selectedCategory !== null) {
-      results = results.filter((faq) => faq.categoryId === selectedCategory);
-    }
-
-    return results;
-  }, [faqData, searchQuery, selectedCategory, liveFuse]);
-
-  const toggleFAQ = useCallback((id: string) => {
-    setOpenFAQs((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
+    // Group FAQs by category for display
+    const groupedFAQs = useMemo(() => {
+      if (searchQuery.trim() || selectedCategory !== null) {
+        return [{ category: null, faqs: filteredFAQs }];
       }
-      return next;
-    });
-  }, []);
 
-  const expandAll = () => {
-    setOpenFAQs(new Set(filteredFAQs.map((f) => f.id)));
-  };
+      const groups: { category: string; faqs: typeof faqData }[] = [];
+      const categoryMap = new Map<string, typeof faqData>();
 
-  const collapseAll = () => {
-    setOpenFAQs(new Set());
-  };
+      filteredFAQs.forEach((faq) => {
+        const existing = categoryMap.get(faq.category) || [];
+        existing.push(faq);
+        categoryMap.set(faq.category, existing);
+      });
 
-  // Group FAQs by category for display
-  const groupedFAQs = useMemo(() => {
-    if (searchQuery.trim() || selectedCategory !== null) {
-      return [{ category: null, faqs: filteredFAQs }];
-    }
+      categoryMap.forEach((faqs, category) => {
+        groups.push({ category, faqs });
+      });
 
-    const groups: { category: string; faqs: typeof faqData }[] = [];
-    const categoryMap = new Map<string, typeof faqData>();
+      return groups;
+    }, [filteredFAQs, searchQuery, selectedCategory]);
 
-    filteredFAQs.forEach((faq) => {
-      const existing = categoryMap.get(faq.category) || [];
-      existing.push(faq);
-      categoryMap.set(faq.category, existing);
-    });
+    return (
+      <div className="min-h-screen bg-background">
+        <Header />
 
-    categoryMap.forEach((faqs, category) => {
-      groups.push({ category, faqs });
-    });
-
-    return groups;
-  }, [filteredFAQs, searchQuery, selectedCategory]);
-
-  return (
-    <div className="min-h-screen bg-background">
-      <Header />
-
-     {loading && (
-  <div className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8 py-8">
-    <FAQPageSkeleton />
-  </div>
-)}
-
-      {error && !loading && (
-        <div className="flex flex-col items-center justify-center py-32 gap-2">
-          <p className="text-muted">{error}</p>
+      {loading && (
+        <div className="flex items-center justify-center py-32">
+          <Loader2 className="animate-spin text-muted" size={32} />
         </div>
       )}
 
-      {!loading && !error && (
-        <>
-          <section className="relative overflow-hidden border-b border-border">
-            <div className="absolute inset-0 bg-gradient-to-b from-accent/5 to-transparent" />
-            <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-12 sm:py-16">
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5 }}
-                className="text-center mb-8"
-              >
-                <h1 className="text-3xl sm:text-4xl font-bold tracking-tight mb-3">
-                  Vicharanashala Internship{" "}
-                  <span className="text-accent">FAQ</span>
-                </h1>
-                <p className="text-muted text-sm sm:text-base max-w-xl mx-auto">
-                  Applied AI · Open-source Software Engineering · IIT Ropar
-                </p>
-              </motion.div>
+        {error && !loading && (
+          <div className="flex flex-col items-center justify-center py-32 gap-2">
+            <p className="text-muted">{error}</p>
+          </div>
+        )}
 
+        {!loading && !error && (
+          <>
+            <section className="relative overflow-hidden border-b border-border">
+              <div className="absolute inset-0 bg-gradient-to-b from-accent/5 to-transparent" />
+              <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-12 sm:py-16">
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.5 }}
+                  className="text-center mb-8"
+                >
+                  <h1 className="text-3xl sm:text-4xl font-bold tracking-tight mb-3">
+                    Vicharanashala Internship{" "}
+                    <span className="text-accent">FAQ</span>
+                  </h1>
+                  <p className="text-muted text-sm sm:text-base max-w-xl mx-auto">
+                    Applied AI · Open-source Software Engineering · IIT Ropar
+                  </p>
+                </motion.div>
+
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.5, delay: 0.1 }}
+                >
+                  <SearchBar
+                    value={searchQuery}
+                    onChange={setSearchQuery}
+                    resultCount={searchQuery ? filteredFAQs.length : undefined}
+                  />
+                </motion.div>
+
+                {/* Stats */}
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.5, delay: 0.2 }}
+                  className="flex justify-center gap-6 sm:gap-10 mt-8"
+                >
+                  <div className="flex items-center gap-2 text-sm text-muted">
+                    <BookOpen size={16} className="text-accent" />
+                    <span>{faqData.length} answers</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm text-muted">
+                    <TrendingUp size={16} className="text-accent" />
+                    <span>{categories.length} categories</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm text-muted">
+                    <Users size={16} className="text-accent" />
+                    <span>600+ interns</span>
+                  </div>
+                </motion.div>
+              </div>
+            </section>
+
+            {/* Main Content */}
+            <main className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8 py-8">
+              {/* Category Filter */}
               <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: 0.1 }}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.3 }}
+                className="mb-6"
               >
-                <SearchBar
-                  value={searchQuery}
-                  onChange={setSearchQuery}
-                  resultCount={searchQuery ? filteredFAQs.length : undefined}
+                <CategoryFilter
+                  categories={categories}
+                  selected={selectedCategory}
+                  onSelect={setSelectedCategory}
                 />
               </motion.div>
 
-              {/* Stats */}
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: 0.2 }}
-                className="flex justify-center gap-6 sm:gap-10 mt-8"
-              >
-                <div className="flex items-center gap-2 text-sm text-muted">
-                  <BookOpen size={16} className="text-accent" />
-                  <span>{faqData.length} answers</span>
-                </div>
-                <div className="flex items-center gap-2 text-sm text-muted">
-                  <TrendingUp size={16} className="text-accent" />
-                  <span>{categories.length} categories</span>
-                </div>
-                <div className="flex items-center gap-2 text-sm text-muted">
-                  <Users size={16} className="text-accent" />
-                  <span>600+ interns</span>
-                </div>
-              </motion.div>
-            </div>
-          </section>
-
-          {/* Main Content */}
-          <main className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8 py-8">
-            {/* Category Filter */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.3 }}
-              className="mb-6"
-            >
-              <CategoryFilter
-                categories={categories}
-                selected={selectedCategory}
-                onSelect={setSelectedCategory}
-              />
-            </motion.div>
-
-            {/* Controls */}
-            <div className="flex items-center justify-between mb-6">
-              <p className="text-sm text-muted">
-                Showing{" "}
-                <span className="text-foreground font-medium">
-                  {filteredFAQs.length}
-                </span>{" "}
-                question{filteredFAQs.length !== 1 ? "s" : ""}
-              </p>
-              <div className="flex gap-2">
-                <button
-                  onClick={expandAll}
-                  className="text-xs px-3 py-1.5 rounded-lg border border-border text-muted hover:text-foreground hover:border-muted transition-all"
-                >
-                  Expand all
-                </button>
-                <button
-                  onClick={collapseAll}
-                  className="text-xs px-3 py-1.5 rounded-lg border border-border text-muted hover:text-foreground hover:border-muted transition-all"
-                >
-                  Collapse all
-                </button>
-              </div>
-            </div>
-
-            {/* FAQ List */}
-            <div className="space-y-3">
-              {groupedFAQs.map((group, groupIdx) => (
-                <div key={group.category || groupIdx}>
-                  {group.category && (
-                    <motion.h2
-                      initial={{ opacity: 0, x: -10 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: groupIdx * 0.05 }}
-                      className="text-lg font-semibold mb-3 mt-8 first:mt-0 flex items-center gap-2"
-                    >
-                      <span>
-                        {
-                          categories.find((c) => c.name === group.category)
-                            ?.icon
-                        }
-                      </span>
-                      {group.category}
-                    </motion.h2>
-                  )}
-                  <div className="space-y-2">
-                    {group.faqs.map((faq, idx) => (
-                      <motion.div
-                        key={faq.id}
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: idx * 0.03 }}
-                      >
-                        <FAQCard
-                          faq={faq}
-                          isOpen={openFAQs.has(faq.id)}
-                          onToggle={() => toggleFAQ(faq.id)}
-                          searchQuery={searchQuery}
-                        />
-                      </motion.div>
-                    ))}
-                  </div>
-                </div>
-              ))}
-
-              {filteredFAQs.length === 0 && (
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  className="text-center py-16"
-                >
-                  <p className="text-4xl mb-4">🔍</p>
-                  <p className="text-lg font-medium mb-2">No results found</p>
-                  <p className="text-sm text-muted mb-4">
-                    Try different keywords or ask Yaksha directly
-                  </p>
+              {/* Controls */}
+              <div className="flex items-center justify-between mb-6">
+                <p className="text-sm text-muted">
+                  Showing{" "}
+                  <span className="text-foreground font-medium">
+                    {filteredFAQs.length}
+                  </span>{" "}
+                  question{filteredFAQs.length !== 1 ? "s" : ""}
+                </p>
+                <div className="flex gap-2">
                   <button
-                    onClick={() => setSearchQuery("")}
-                    className="text-sm text-accent hover:underline"
+                    onClick={expandAll}
+                    className="text-xs px-3 py-1.5 rounded-lg border border-border text-muted hover:text-foreground hover:border-muted transition-all"
                   >
-                    Clear search
+                    Expand all
                   </button>
-                </motion.div>
-              )}
-            </div>
+                  <button
+                    onClick={collapseAll}
+                    className="text-xs px-3 py-1.5 rounded-lg border border-border text-muted hover:text-foreground hover:border-muted transition-all"
+                  >
+                    Collapse all
+                  </button>
+                </div>
+              </div>
 
-            {/* Footer */}
-            <footer className="mt-16 pb-8 border-t border-border pt-8 text-center">
-              <p className="text-xs text-muted">
-                Vicharanashala Lab · Indian Institute of Technology Ropar · 2026
-                cycle
-              </p>
-              <p className="text-xs text-muted mt-1">
-                FAQ Version: v22.1.0 · Last updated: 2026-05-24
-              </p>
-            </footer>
-          </main>
+              {/* FAQ List */}
+              <div className="space-y-3">
+                {groupedFAQs.map((group, groupIdx) => (
+                  <div key={group.category || groupIdx}>
+                    {group.category && (
+                      <motion.h2
+                        initial={{ opacity: 0, x: -10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: groupIdx * 0.05 }}
+                        className="text-lg font-semibold mb-3 mt-8 first:mt-0 flex items-center gap-2"
+                      >
+                        <span>
+                          {
+                            categories.find((c) => c.name === group.category)
+                              ?.icon
+                          }
+                        </span>
+                        {group.category}
+                      </motion.h2>
+                    )}
+                    <div className="space-y-2">
+                      {group.faqs.map((faq, idx) => (
+                        <motion.div
+                          key={faq.id}
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: idx * 0.03 }}
+                        >
+                          <FAQCard
+                            faq={faq}
+                            isOpen={openFAQs.has(faq.id)}
+                            onToggle={() => toggleFAQ(faq.id)}
+                            searchQuery={searchQuery}
+                          />
+                        </motion.div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
 
-          {/* Yaksha Chat */}
-          <YakshaChat />
-        </>
-      )}
-    </div>
-  );
-}
+                {filteredFAQs.length === 0 && (
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className="text-center py-16"
+                  >
+                    <p className="text-4xl mb-4">🔍</p>
+                    <p className="text-lg font-medium mb-2">No results found</p>
+                    <p className="text-sm text-muted mb-4">
+                      Try different keywords or ask Yaksha directly
+                    </p>
+                    <button
+                      onClick={() => setSearchQuery("")}
+                      className="text-sm text-accent hover:underline"
+                    >
+                      Clear search
+                    </button>
+                  </motion.div>
+                )}
+              </div>
+
+              {/* Footer */}
+              <footer className="mt-16 pb-8 border-t border-border pt-8 text-center">
+                <p className="text-xs text-muted">
+                  Vicharanashala Lab · Indian Institute of Technology Ropar · 2026
+                  cycle
+                </p>
+                <p className="text-xs text-muted mt-1">
+                  FAQ Version: v22.1.0 · Last updated: 2026-05-24
+                </p>
+              </footer>
+            </main>
+
+            {/* Yaksha Chat */}
+            <YakshaChat />
+          </>
+        )}
+      </div>
+    );
+  }
