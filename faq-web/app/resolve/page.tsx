@@ -1,398 +1,427 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import toast from "react-hot-toast";
-import Header from "@/components/Header";
+/**
+ * app/resolve/page.tsx  →  Student Profile Page
+ *
+ * Shows the logged-in student's identity, contribution stats, and a tabbed
+ * view of all their questions (community + legacy) and answers.
+ *
+ * Data: GET /api/community/my-contributions
+ *   - x-student-id header  → community_questions / community_answers
+ *   - Authorization: Bearer <jwt> → pending_questions (legacy /ask flow)
+ *
+ * Auth: redirects to /auth/signin when no JWT is present.
+ */
+
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { motion } from "framer-motion";
 import {
+  User,
+  HelpCircle,
+  MessageSquare,
   CheckCircle,
   Clock,
-  AlertCircle,
-  MessageSquare,
-  Trash2,
-  Send,
-  Filter,
-  Sparkles,
-  Mail,
-  RefreshCw,
+  Calendar,
+  ExternalLink,
+  Inbox,
 } from "lucide-react";
+import Header from "@/components/Header";
+import StatusBadge from "@/components/community/StatusBadge";
+import { api } from "@/lib/community/client";
+import { getAuthToken } from "@/lib/auth";
+import { useAuth } from "@/context/AuthContext";
 import { cn } from "@/lib/utils";
+import type { AnswerDTO, QuestionDTO } from "@/lib/community/types";
+import type { AnswerStatus, QuestionStatus } from "@/lib/community/constants";
 
-interface PendingQuestion {
-  id: string;
-  question: string;
-  category: string;
-  email: string;
-  priority: "normal" | "urgent";
-  submittedAt: string;
-  status: "pending" | "resolved" | "rejected";
-  suggestedAnswer?: string | null;
-  answer?: string | null;
+// ─── Local types ──────────────────────────────────────────────────────────────
+
+type QuestionDTOExtended = QuestionDTO & { isLegacy?: boolean };
+type Tab = "questions" | "answers";
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+/** Extract the "name" portion of an email for the avatar initials. */
+function emailToInitials(email: string): string {
+  const name = email.split("@")[0] ?? email;
+  const parts = name.split(/[._-]/);
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[1][0]).toUpperCase();
+  }
+  return name.slice(0, 2).toUpperCase();
 }
 
-export default function ResolvePage() {
-  const [questions, setQuestions] = useState<PendingQuestion[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [selectedQuestion, setSelectedQuestion] = useState<PendingQuestion | null>(null);
-  const [answer, setAnswer] = useState("");
-  const [filter, setFilter] = useState<"all" | "pending" | "urgent">("all");
-  const [submitting, setSubmitting] = useState(false);
+/** Display-friendly greeting name from email. */
+function emailToName(email: string): string {
+  const name = email.split("@")[0] ?? email;
+  return name
+    .split(/[._-]/)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
 
-  const loadQuestions = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await fetch("/api/admin/pending-questions?status=all", {
-        headers: { "x-admin-key": localStorage.getItem("samagama_admin_key") ?? "dev-admin" },
-      });
-      const data = await res.json();
-      if (data.ok) {
-        setQuestions(data.questions);
-      } else {
-        toast.error(data.error?.message ?? "Failed to load questions");
-      }
-    } catch {
-      toast.error("Network error — could not load questions");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+/** Relative time string. */
+function relativeTime(date: string | Date): string {
+  const ms = Date.now() - new Date(date).getTime();
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return "just now";
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d < 30) return `${d}d ago`;
+  return new Date(date).toLocaleDateString();
+}
 
+/** Map QuestionStatus → AnswerStatus for StatusBadge reuse. */
+function questionStatusToAnswerStatus(s: QuestionStatus): AnswerStatus {
+  switch (s) {
+    case "approved": return "approved";
+    case "open":     return "approved";
+    case "closed":   return "hidden";
+    case "hidden":   return "hidden";
+    case "deleted":  return "deleted";
+    case "rejected_by_rag": return "rejected";
+    default:         return "pending_review";
+  }
+}
+
+// ─── Stat card ───────────────────────────────────────────────────────────────
+
+function StatCard({
+  icon: Icon,
+  label,
+  value,
+  color = "text-accent",
+}: {
+  icon: React.ElementType;
+  label: string;
+  value: number;
+  color?: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-border bg-card p-4 flex flex-col gap-1">
+      <div className="flex items-center gap-1.5">
+        <Icon size={14} className={color} />
+        <span className="text-xs text-muted">{label}</span>
+      </div>
+      <p className={cn("text-2xl font-bold", color)}>{value}</p>
+    </div>
+  );
+}
+
+// ─── Question card ────────────────────────────────────────────────────────────
+
+function QuestionCard({ q }: { q: QuestionDTOExtended }) {
+  const inner = (
+    <div
+      className={cn(
+        "rounded-xl border border-border bg-card p-4 transition-all",
+        !q.isLegacy && "hover:border-accent/40 hover:shadow-sm"
+      )}
+    >
+      <div className="flex items-start justify-between gap-3 mb-2">
+        <p className="text-sm font-medium leading-snug">{q.title}</p>
+        <StatusBadge status={questionStatusToAnswerStatus(q.status as QuestionStatus)} />
+      </div>
+      <div className="flex items-center gap-3 flex-wrap text-xs text-muted">
+        {q.isLegacy ? (
+          <span className="px-1.5 py-0.5 rounded bg-accent/10 text-accent font-medium">
+            Via Ask
+          </span>
+        ) : (
+          <span className="flex items-center gap-1">
+            <ExternalLink size={10} /> Community thread
+          </span>
+        )}
+        {q.tags.length > 0 && (
+          <span className="px-1.5 py-0.5 rounded-full border border-border">
+            {q.tags[0]}
+          </span>
+        )}
+        <span className="flex items-center gap-1">
+          <Clock size={10} /> {relativeTime(q.createdAt)}
+        </span>
+        {!q.isLegacy && (
+          <span className="flex items-center gap-1">
+            <CheckCircle size={10} /> {q.approvedAnswerCount} approved
+          </span>
+        )}
+      </div>
+    </div>
+  );
+
+  return q.isLegacy ? (
+    <div>{inner}</div>
+  ) : (
+    <Link href={`/community/${q.id}`}>{inner}</Link>
+  );
+}
+
+// ─── Answer card ──────────────────────────────────────────────────────────────
+
+function AnswerCard({ a }: { a: AnswerDTO }) {
+  return (
+    <Link
+      href={`/community/${a.questionId}`}
+      className="block rounded-xl border border-border bg-card p-4 hover:border-accent/40 hover:shadow-sm transition-all"
+    >
+      <div className="flex items-center justify-between gap-3 mb-2">
+        <p className="text-xs text-muted truncate">
+          on: <span className="text-foreground/80">{a.questionTitle ?? "—"}</span>
+        </p>
+        <StatusBadge status={a.status} />
+      </div>
+      <p className="text-sm text-foreground/80 line-clamp-2">{a.body}</p>
+      {a.review && a.review.reasons.length > 0 && (
+        <p className="text-xs text-muted mt-1.5 line-clamp-1">
+          {a.review.reasons.join(", ")}
+        </p>
+      )}
+      <p className="text-xs text-muted mt-2 flex items-center gap-1">
+        <Clock size={10} /> {relativeTime(a.createdAt)}
+      </p>
+    </Link>
+  );
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
+
+export default function ProfilePage() {
+  const router = useRouter();
+  const { user, loading: authLoading } = useAuth();
+
+  const [questions, setQuestions] = useState<QuestionDTOExtended[]>([]);
+  const [answers, setAnswers] = useState<AnswerDTO[]>([]);
+  const [dataLoading, setDataLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<Tab>("questions");
+
+  // Auth guard — redirect when auth is resolved and there's no user.
   useEffect(() => {
-    void loadQuestions();
-  }, [loadQuestions]);
-
-  const filteredQuestions = questions.filter((q) => {
-    if (filter === "pending") return q.status === "pending";
-    if (filter === "urgent") return q.priority === "urgent" && q.status === "pending";
-    return true;
-  });
-
-  const handleResolve = async (id: string) => {
-    if (!answer.trim()) return;
-    setSubmitting(true);
-    try {
-      const res = await fetch("/api/admin/pending-questions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-admin-key": localStorage.getItem("samagama_admin_key") ?? "dev-admin",
-        },
-        body: JSON.stringify({ id, action: "resolve", answer }),
-      });
-      const data = await res.json();
-      if (data.ok) {
-        setQuestions((prev) =>
-          prev.map((q) => (q.id === id ? { ...q, status: "resolved" as const } : q))
-        );
-        toast.success(
-          <div className="flex flex-col gap-1">
-            <div className="flex items-center gap-2 font-semibold">
-              <Mail size={14} />
-              <span>Question resolved</span>
-            </div>
-            <p className="text-xs opacity-80">
-              Notification sent to {selectedQuestion?.email}
-            </p>
-          </div>,
-          { duration: 4000 }
-        );
-        setSelectedQuestion(null);
-        setAnswer("");
-      } else {
-        toast.error(data.error?.message ?? "Failed to resolve question");
-      }
-    } catch {
-      toast.error("Network error — could not resolve question");
-    } finally {
-      setSubmitting(false);
+    if (!authLoading && !user) {
+      router.replace("/auth/signin");
     }
-  };
+  }, [authLoading, user, router]);
 
-  const handleReject = async (id: string) => {
-    setSubmitting(true);
-    try {
-      const res = await fetch("/api/admin/pending-questions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-admin-key": localStorage.getItem("samagama_admin_key") ?? "dev-admin",
-        },
-        body: JSON.stringify({ id, action: "reject" }),
-      });
-      const data = await res.json();
-      if (data.ok) {
-        setQuestions((prev) =>
-          prev.map((q) => (q.id === id ? { ...q, status: "rejected" as const } : q))
-        );
-        toast.error(
-          <div className="flex flex-col gap-1">
-            <div className="flex items-center gap-2 font-semibold">
-              <Mail size={14} />
-              <span>Question rejected</span>
-            </div>
-            <p className="text-xs opacity-80">
-              User notified: {selectedQuestion?.email}
-            </p>
-          </div>,
-          { duration: 4000 }
-        );
-        setSelectedQuestion(null);
-        setAnswer("");
-      } else {
-        toast.error(data.error?.message ?? "Failed to reject question");
+  // Fetch contributions once we know the user is logged in.
+  useEffect(() => {
+    if (authLoading || !user) return;
+
+    (async () => {
+      try {
+        const token = getAuthToken();
+        const res = await api("/api/community/my-contributions", {
+          headers: token ? { authorization: `Bearer ${token}` } : undefined,
+        });
+        if (res.ok) {
+          setQuestions((res.questions as QuestionDTOExtended[]) ?? []);
+          setAnswers((res.answers as AnswerDTO[]) ?? []);
+        }
+      } finally {
+        setDataLoading(false);
       }
-    } catch {
-      toast.error("Network error — could not reject question");
-    } finally {
-      setSubmitting(false);
-    }
-  };
+    })();
+  }, [authLoading, user]);
 
-  const pendingCount = questions.filter((q) => q.status === "pending").length;
-  const urgentCount = questions.filter((q) => q.priority === "urgent" && q.status === "pending").length;
-  const resolvedCount = questions.filter((q) => q.status === "resolved").length;
+  // ── Derived stats ────────────────────────────────────────────────────────
+  const approvedAnswers = answers.filter((a) => a.status === "approved").length;
+  const pendingAnswers  = answers.filter((a) => a.status === "pending_review").length;
+
+  // While auth is resolving, show nothing (avoids flash of profile content).
+  // Simple guard lets TypeScript narrow `user` to non-null below this line.
+  if (authLoading || !user) return null;
+
+  const initials = emailToInitials(user.email);
+  const displayName = emailToName(user.email);
 
   return (
     <div className="min-h-screen bg-background">
       <Header />
 
-      <main className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
-        {/* Page Header */}
+      <main className="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8 py-10">
+
+        {/* ── Profile hero ───────────────────────────────────────────────── */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           className="mb-8"
         >
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl sm:text-3xl font-bold mb-2">
-                Resolve <span className="text-accent">Questions</span>
-              </h1>
-              <p className="text-muted text-sm">
-                Admin panel — review, answer, or reject pending questions
+          <div className="rounded-2xl border border-border bg-card p-6 flex items-center gap-5">
+            {/* Avatar */}
+            <div className="shrink-0 w-16 h-16 rounded-full bg-gradient-to-br from-accent to-accent/60 flex items-center justify-center text-background text-xl font-bold shadow-lg shadow-accent/20">
+              {initials}
+            </div>
+
+            {/* Identity */}
+            <div className="flex-1 min-w-0">
+              <h1 className="text-xl font-bold truncate">{displayName}</h1>
+              <p className="text-sm text-muted truncate flex items-center gap-1.5 mt-0.5">
+                <User size={12} />
+                {user.email}
+              </p>
+              <p className="text-xs text-muted flex items-center gap-1.5 mt-1">
+                <Calendar size={11} />
+                Student contributor
               </p>
             </div>
-            <button
-              onClick={loadQuestions}
-              disabled={loading}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl border border-border text-muted hover:text-foreground hover:border-muted transition-all text-sm"
-            >
-              <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
-              Refresh
-            </button>
+
+            {/* Quick actions */}
+            <div className="shrink-0 flex flex-col gap-2">
+              <Link
+                href="/community/ask"
+                className="text-xs px-3 py-1.5 rounded-lg bg-accent text-background font-medium hover:bg-accent/90 transition-colors"
+              >
+                Ask a question
+              </Link>
+              <Link
+                href="/community"
+                className="text-xs px-3 py-1.5 rounded-lg border border-border text-muted hover:text-foreground hover:border-muted transition-colors text-center"
+              >
+                Browse Q&amp;A
+              </Link>
+            </div>
           </div>
         </motion.div>
 
-        {/* Stats */}
+        {/* ── Stats bar ──────────────────────────────────────────────────── */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="grid grid-cols-3 gap-4 mb-8"
+          transition={{ delay: 0.08 }}
+          className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8"
         >
-          <div className="rounded-xl border border-border bg-card p-4">
-            <div className="flex items-center gap-2 mb-1">
-              <Clock size={16} className="text-accent" />
-              <span className="text-xs text-muted">Pending</span>
-            </div>
-            <p className="text-2xl font-bold">{pendingCount}</p>
-          </div>
-          <div className="rounded-xl border border-border bg-card p-4">
-            <div className="flex items-center gap-2 mb-1">
-              <AlertCircle size={16} className="text-danger" />
-              <span className="text-xs text-muted">Urgent</span>
-            </div>
-            <p className="text-2xl font-bold text-danger">{urgentCount}</p>
-          </div>
-          <div className="rounded-xl border border-border bg-card p-4">
-            <div className="flex items-center gap-2 mb-1">
-              <CheckCircle size={16} className="text-success" />
-              <span className="text-xs text-muted">Resolved</span>
-            </div>
-            <p className="text-2xl font-bold text-success">{resolvedCount}</p>
-          </div>
+          <StatCard icon={HelpCircle}    label="Questions asked" value={questions.length} color="text-accent" />
+          <StatCard icon={MessageSquare} label="Answers given"   value={answers.length}   color="text-violet-400" />
+          <StatCard icon={CheckCircle}   label="Approved"        value={approvedAnswers}   color="text-success" />
+          <StatCard icon={Clock}         label="Pending review"  value={pendingAnswers}    color="text-yellow-400" />
         </motion.div>
 
-        {/* Filter */}
-        <div className="flex items-center gap-2 mb-6">
-          <Filter size={16} className="text-muted" />
-          {(["all", "pending", "urgent"] as const).map((f) => (
-            <button
-              key={f}
-              onClick={() => setFilter(f)}
-              className={cn(
-                "px-3 py-1.5 rounded-lg text-xs font-medium transition-all capitalize",
-                filter === f
-                  ? "bg-accent text-background"
-                  : "bg-card border border-border text-muted hover:text-foreground"
-              )}
-            >
-              {f}
-            </button>
-          ))}
-        </div>
-
-        {/* Questions Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Question List */}
-          <div className="space-y-3">
-            {loading ? (
-              <div className="text-center py-16 text-muted text-sm">
-                Loading questions…
-              </div>
-            ) : filteredQuestions.length === 0 ? (
-              <div className="text-center py-12">
-                <CheckCircle size={48} className="text-success mx-auto mb-4 opacity-50" />
-                <p className="text-muted">No questions in this filter</p>
-              </div>
-            ) : (
-              filteredQuestions.map((q, idx) => (
-                <motion.div
-                  key={q.id}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: idx * 0.05 }}
-                  onClick={() => {
-                    setSelectedQuestion(q);
-                    setAnswer(q.suggestedAnswer || "");
-                  }}
-                  className={cn(
-                    "rounded-xl border p-4 cursor-pointer transition-all",
-                    selectedQuestion?.id === q.id
-                      ? "border-accent bg-accent/5"
-                      : "border-border bg-card hover:border-muted",
-                    q.status === "resolved" && "opacity-50",
-                    q.status === "rejected" && "opacity-30"
-                  )}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-2">
-                        <span
-                          className={cn(
-                            "text-xs px-2 py-0.5 rounded-full font-medium",
-                            q.priority === "urgent"
-                              ? "bg-danger/20 text-danger"
-                              : "bg-accent/10 text-accent"
-                          )}
-                        >
-                          {q.priority}
-                        </span>
-                        <span className="text-xs text-muted">{q.category}</span>
-                        {q.status !== "pending" && (
-                          <span
-                            className={cn(
-                              "text-xs px-2 py-0.5 rounded-full",
-                              q.status === "resolved"
-                                ? "bg-success/20 text-success"
-                                : "bg-danger/20 text-danger"
-                            )}
-                          >
-                            {q.status}
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-sm font-medium leading-relaxed">
-                        {q.question}
-                      </p>
-                      <div className="flex items-center gap-3 mt-2">
-                        <span className="text-xs text-muted">{q.email}</span>
-                        <span className="text-xs text-muted">
-                          {new Date(q.submittedAt).toLocaleString()}
-                        </span>
-                      </div>
-                    </div>
-                    <MessageSquare size={16} className="text-muted shrink-0" />
-                  </div>
-                </motion.div>
-              ))
-            )}
+        {/* ── Tabs ───────────────────────────────────────────────────────── */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.14 }}
+        >
+          <div className="flex items-center gap-1 mb-5 border-b border-border">
+            {(["questions", "answers"] as Tab[]).map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                className={cn(
+                  "pb-3 px-4 text-sm font-medium capitalize transition-all border-b-2 -mb-px",
+                  activeTab === tab
+                    ? "border-accent text-accent"
+                    : "border-transparent text-muted hover:text-foreground"
+                )}
+              >
+                {tab === "questions" ? (
+                  <span className="flex items-center gap-1.5">
+                    <HelpCircle size={13} /> Questions
+                    <span className="text-xs bg-accent/10 text-accent px-1.5 py-0.5 rounded-full font-medium">
+                      {questions.length}
+                    </span>
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1.5">
+                    <MessageSquare size={13} /> Answers
+                    <span className="text-xs bg-violet-500/10 text-violet-400 px-1.5 py-0.5 rounded-full font-medium">
+                      {answers.length}
+                    </span>
+                  </span>
+                )}
+              </button>
+            ))}
           </div>
 
-          {/* Answer Panel */}
-          <AnimatePresence mode="wait">
-            {selectedQuestion ? (
-              <motion.div
-                key={selectedQuestion.id}
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: 20 }}
-                className="sticky top-24 rounded-xl border border-border bg-card p-6 h-fit"
-              >
-                <h3 className="text-sm font-semibold mb-1">Answer this question</h3>
-                <p className="text-xs text-muted mb-4">
-                  {selectedQuestion.question}
-                </p>
-
-                {/* AI Suggested Answer */}
-                {selectedQuestion.suggestedAnswer && (
-                  <div className="mb-4 rounded-lg border border-accent/30 bg-accent/5 p-3">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Sparkles size={14} className="text-accent" />
-                      <span className="text-xs font-medium text-accent">
-                        AI-suggested answer
-                      </span>
-                    </div>
-                    <p className="text-xs text-foreground/70 leading-relaxed">
-                      {selectedQuestion.suggestedAnswer}
-                    </p>
-                    <button
-                      onClick={() => setAnswer(selectedQuestion.suggestedAnswer || "")}
-                      className="mt-2 text-xs text-accent hover:underline"
-                    >
-                      Use this answer →
-                    </button>
-                  </div>
-                )}
-
-                <textarea
-                  value={answer}
-                  onChange={(e) => setAnswer(e.target.value)}
-                  placeholder="Type your answer here..."
-                  rows={6}
-                  className="w-full bg-background border border-border rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-accent transition-colors resize-none placeholder:text-muted mb-4"
-                  disabled={submitting}
+          {/* ── Tab content ──────────────────────────────────────────────── */}
+          {dataLoading ? (
+            <div className="space-y-3">
+              {[0, 1, 2].map((i) => (
+                <div
+                  key={i}
+                  className="h-20 rounded-xl border border-border bg-card animate-pulse"
                 />
-
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => handleResolve(selectedQuestion.id)}
-                    disabled={!answer.trim() || submitting}
-                    className={cn(
-                      "flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-medium transition-all",
-                      answer.trim() && !submitting
-                        ? "bg-success text-background hover:bg-success/90"
-                        : "bg-card border border-border text-muted cursor-not-allowed"
-                    )}
-                  >
-                    <Send size={14} />
-                    {submitting ? "Resolving…" : "Resolve"}
-                  </button>
-                  <button
-                    onClick={() => handleReject(selectedQuestion.id)}
-                    disabled={submitting}
-                    className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border border-danger/30 text-danger hover:bg-danger/10 transition-all disabled:opacity-50"
-                  >
-                    <Trash2 size={14} />
-                    Reject
-                  </button>
-                </div>
-              </motion.div>
+              ))}
+            </div>
+          ) : activeTab === "questions" ? (
+            questions.length === 0 ? (
+              <EmptyState
+                icon={HelpCircle}
+                title="No questions yet"
+                message="Head over to the community and ask your first question."
+                cta={{ label: "Ask a question", href: "/community/ask" }}
+              />
             ) : (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="sticky top-24 rounded-xl border border-border bg-card p-12 text-center"
-              >
-                <MessageSquare size={48} className="text-muted mx-auto mb-4 opacity-30" />
-                <p className="text-sm text-muted">
-                  Select a question to answer
-                </p>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
+              <div className="space-y-3">
+                {questions.map((q, i) => (
+                  <motion.div
+                    key={q.id}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: i * 0.04 }}
+                  >
+                    <QuestionCard q={q} />
+                  </motion.div>
+                ))}
+              </div>
+            )
+          ) : answers.length === 0 ? (
+            <EmptyState
+              icon={MessageSquare}
+              title="No answers yet"
+              message="Browse open questions and share your knowledge."
+              cta={{ label: "Browse Q&A", href: "/community" }}
+            />
+          ) : (
+            <div className="space-y-3">
+              {answers.map((a, i) => (
+                <motion.div
+                  key={a.id}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: i * 0.04 }}
+                >
+                  <AnswerCard a={a} />
+                </motion.div>
+              ))}
+            </div>
+          )}
+        </motion.div>
       </main>
+    </div>
+  );
+}
+
+// ─── Empty state ──────────────────────────────────────────────────────────────
+
+function EmptyState({
+  icon: Icon,
+  title,
+  message,
+  cta,
+}: {
+  icon: React.ElementType;
+  title: string;
+  message: string;
+  cta: { label: string; href: string };
+}) {
+  return (
+    <div className="py-16 text-center">
+      <div className="w-14 h-14 rounded-full bg-card border border-border flex items-center justify-center mx-auto mb-4">
+        <Inbox size={24} className="text-muted opacity-50" />
+      </div>
+      <p className="text-base font-medium mb-1">{title}</p>
+      <p className="text-sm text-muted mb-5">{message}</p>
+      <Link
+        href={cta.href}
+        className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-accent text-background text-sm font-medium hover:bg-accent/90 transition-colors"
+      >
+        <Icon size={14} />
+        {cta.label}
+      </Link>
     </div>
   );
 }

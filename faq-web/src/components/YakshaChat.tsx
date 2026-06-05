@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, type ReactNode } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { MessageCircle, X, Send, Bot, User, Sparkles } from "lucide-react";
+import { MessageCircle, X, Send, Bot, User, Sparkles, Lightbulb, PlusCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const RAG_BASE = process.env.NEXT_PUBLIC_RAG_API ?? "http://localhost:8000";
@@ -18,6 +18,7 @@ interface SourceDoc {
 interface QueryResponse {
   answer: string;
   sources: SourceDoc[];
+  confidence: number;
 }
 
 interface Message {
@@ -26,9 +27,60 @@ interface Message {
   content: string;
   timestamp: Date;
   sources?: string[];
+  showSubmitPrompt?: boolean;
+  submittedForFaq?: boolean;
 }
 
 const MIN_W = 300, MAX_W = 700, MIN_H = 400, MAX_H = 800;
+const CONFIDENCE_THRESHOLD = 0.5;
+
+function FaqSubmitPrompt({
+  msgId,
+  onSubmit,
+}: {
+  msgId: string;
+  onSubmit: (id: string) => void;
+}) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 4 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="ml-8 mt-1 rounded-xl border border-accent/30 bg-accent/5 p-3"
+    >
+      <div className="flex items-center gap-2 mb-2">
+        <Lightbulb size={14} className="text-accent" />
+        <span className="text-xs font-medium text-accent">
+          Couldn&apos;t find what you needed?
+        </span>
+      </div>
+      <p className="text-xs text-muted mb-3">
+        This question could be added to the FAQ. Submit it for admin review.
+      </p>
+      <button
+        onClick={() => onSubmit(msgId)}
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent text-background text-xs font-medium hover:bg-accent-hover transition-colors"
+      >
+        <PlusCircle size={12} />
+        Submit for FAQ Review
+      </button>
+    </motion.div>
+  );
+}
+
+function FaqSubmitSuccess() {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 4 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="ml-8 mt-1 rounded-xl border border-success/30 bg-success/5 p-3"
+    >
+      <p className="text-xs text-success flex items-center gap-1.5">
+        <Sparkles size={12} />
+        Question submitted for FAQ review!
+      </p>
+    </motion.div>
+  );
+}
 
 export default function YakshaChat() {
   const [isOpen, setIsOpen] = useState(false);
@@ -45,6 +97,7 @@ export default function YakshaChat() {
   const [isTyping, setIsTyping] = useState(false);
   const [ragStatus, setRagStatus] = useState<"online" | "offline">("online");
   const [size, setSize] = useState({ width: 380, height: 550 });
+  const lastUserQuestion = useRef("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const dragStart = useRef<{ x: number; y: number; w: number; h: number } | null>(null);
 
@@ -90,6 +143,8 @@ export default function YakshaChat() {
     const query = input.trim();
     if (!query) return;
 
+    lastUserQuestion.current = query;
+
     const userMessage: Message = {
       id: Date.now().toString(),
       role: "user",
@@ -119,6 +174,8 @@ export default function YakshaChat() {
       }
 
       const data: QueryResponse = await res.json();
+      const confidence = data.confidence ?? 1.0;
+      const showSubmitPrompt = confidence < CONFIDENCE_THRESHOLD;
 
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
@@ -128,6 +185,7 @@ export default function YakshaChat() {
         sources: data.sources.map(
           (s) => `${s.title} (${s.section})`
         ),
+        showSubmitPrompt,
       };
       setMessages((prev) => [...prev, assistantMessage]);
       setRagStatus("online");
@@ -162,6 +220,33 @@ export default function YakshaChat() {
     } finally {
       setIsTyping(false);
     }
+  };
+
+  const handleSubmitForFaq = async (msgId: string) => {
+    try {
+      const res = await fetch("/api/chat-suggestion", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: lastUserQuestion.current }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === msgId ? { ...m, showSubmitPrompt: false, submittedForFaq: true } : m
+          )
+        );
+      }
+    } catch {
+      console.error("[YakshaChat] Failed to submit question for FAQ review");
+    }
+  };
+
+  const renderMsgExtra = (msg: Message): ReactNode => {
+    if (msg.role !== "assistant") return null;
+    if (msg.submittedForFaq) return <FaqSubmitSuccess />;
+    if (msg.showSubmitPrompt) return <FaqSubmitPrompt msgId={msg.id} onSubmit={handleSubmitForFaq} />;
+    return null;
   };
 
   return (
@@ -240,48 +325,54 @@ export default function YakshaChat() {
 
             {/* Messages */}
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
-              {messages.map((msg) => (
-                <motion.div
-                  key={msg.id}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className={cn(
-                    "flex gap-2",
-                    msg.role === "user" ? "justify-end" : "justify-start"
-                  )}
-                >
-                  {msg.role === "assistant" && (
-                    <div className="shrink-0 w-6 h-6 rounded-full bg-accent/20 flex items-center justify-center mt-1">
-                      <Sparkles size={12} className="text-accent" />
-                    </div>
-                  )}
-                  <div
-                    className={cn(
-                      "max-w-[80%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed",
-                      msg.role === "user"
-                        ? "bg-accent text-background rounded-br-md"
-                        : "bg-card border border-border rounded-bl-md"
-                    )}
-                  >
-                    <p className="whitespace-pre-line">{msg.content}</p>
-                    {msg.sources && msg.sources.length > 0 && (
-                      <div className="mt-2 pt-2 border-t border-border/50">
-                        <p className="text-xs text-muted mb-1">Sources:</p>
-                        {msg.sources.map((s, i) => (
-                          <p key={i} className="text-xs text-muted/70">
-                            {s}
-                          </p>
-                        ))}
+              {messages.map((msg) => {
+                const extra = renderMsgExtra(msg);
+                return (
+                  <>
+                    <motion.div
+                      key={msg.id}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className={cn(
+                        "flex gap-2",
+                        msg.role === "user" ? "justify-end" : "justify-start"
+                      )}
+                    >
+                      {msg.role === "assistant" && (
+                        <div className="shrink-0 w-6 h-6 rounded-full bg-accent/20 flex items-center justify-center mt-1">
+                          <Sparkles size={12} className="text-accent" />
+                        </div>
+                      )}
+                      <div
+                        className={cn(
+                          "max-w-[80%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed",
+                          msg.role === "user"
+                            ? "bg-accent text-background rounded-br-md"
+                            : "bg-card border border-border rounded-bl-md"
+                        )}
+                      >
+                        <p className="whitespace-pre-line">{msg.content}</p>
+                        {msg.sources && msg.sources.length > 0 && (
+                          <div className="mt-2 pt-2 border-t border-border/50">
+                            <p className="text-xs text-muted mb-1">Sources:</p>
+                            {msg.sources.map((s, i) => (
+                              <p key={i} className="text-xs text-muted/70">
+                                {s}
+                              </p>
+                            ))}
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </div>
-                  {msg.role === "user" && (
-                    <div className="shrink-0 w-6 h-6 rounded-full bg-foreground/10 flex items-center justify-center mt-1">
-                      <User size={12} className="text-foreground" />
-                    </div>
-                  )}
-                </motion.div>
-              ))}
+                      {msg.role === "user" && (
+                        <div className="shrink-0 w-6 h-6 rounded-full bg-foreground/10 flex items-center justify-center mt-1">
+                          <User size={12} className="text-foreground" />
+                        </div>
+                      )}
+                    </motion.div>
+                    {extra}
+                  </>
+                );
+              })}
 
               {isTyping && (
                 <motion.div

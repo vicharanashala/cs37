@@ -14,6 +14,8 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
+import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   ChevronUp,
   ChevronDown,
@@ -52,6 +54,39 @@ const REPORT_REASONS = [
   { value: "academic_integrity", label: "Academic integrity" },
   { value: "other", label: "Other" },
 ];
+
+// Shared Markdown component overrides — mirrors community/page.tsx
+const mdComponents: React.ComponentProps<typeof Markdown>["components"] = {
+  h1: ({ children }) => <h1 className="text-lg font-bold mt-3 mb-2">{children}</h1>,
+  h2: ({ children }) => <h2 className="text-base font-semibold mt-3 mb-2">{children}</h2>,
+  h3: ({ children }) => <h3 className="text-sm font-semibold mt-2 mb-1">{children}</h3>,
+  h4: ({ children }) => <h4 className="text-sm font-medium mt-2 mb-1">{children}</h4>,
+  p: ({ children }) => <p className="text-sm leading-relaxed my-2">{children}</p>,
+  ul: ({ children }) => <ul className="list-disc list-inside my-2 space-y-1 text-sm">{children}</ul>,
+  ol: ({ children }) => <ol className="list-decimal list-inside my-2 space-y-1 text-sm">{children}</ol>,
+  li: ({ children }) => <li className="text-sm leading-relaxed">{children}</li>,
+  code: ({ className, children, ...props }) => {
+    const isInline = !className;
+    if (isInline) {
+      return <code className="bg-muted/30 text-xs px-1.5 py-0.5 rounded font-mono" {...props}>{children}</code>;
+    }
+    return (
+      <pre className="bg-muted/20 rounded-lg p-3 my-2 overflow-x-auto text-xs font-mono">
+        <code className={className} {...props}>{children}</code>
+      </pre>
+    );
+  },
+  a: ({ href, children }) => (
+    <a href={href} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">{children}</a>
+  ),
+  strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+  em: ({ children }) => <em className="italic">{children}</em>,
+  del: ({ children }) => <del className="line-through opacity-70">{children}</del>,
+  blockquote: ({ children }) => (
+    <blockquote className="border-l-4 border-border pl-4 italic text-muted my-2">{children}</blockquote>
+  ),
+  hr: () => <hr className="border-border my-4" />,
+};
 
 export default function QuestionDetailPage() {
   const params = useParams<{ questionId: string }>();
@@ -328,9 +363,9 @@ export default function QuestionDetailPage() {
                   </span>
                 )}
               </div>
-              <p className="text-sm text-foreground/80 whitespace-pre-line">
+              <Markdown remarkPlugins={[remarkGfm]} components={mdComponents}>
                 {a.body}
-              </p>
+              </Markdown>
               {a.review && a.review.reasons.length > 0 && (
                 <p className="text-xs text-muted mt-2">
                   Reasons: {a.review.reasons.join(", ")}
@@ -457,7 +492,9 @@ function SuggestedAnswerCard({
           Generated from official FAQ sources and web search
         </span>
       </div>
-      <p className="text-sm leading-relaxed whitespace-pre-line">{answer.body}</p>
+      <Markdown remarkPlugins={[remarkGfm]} components={mdComponents}>
+        {answer.body}
+      </Markdown>
 
       {(officialSources.length > 0 || webSources.length > 0) && (
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -662,9 +699,9 @@ function AnswerCard({
 
         {/* Body */}
         <div className="min-w-0 flex-1">
-          <p className="text-sm leading-relaxed whitespace-pre-line">
+          <Markdown remarkPlugins={[remarkGfm]} components={mdComponents}>
             {answer.body}
-          </p>
+          </Markdown>
 
           {answer.citations.length > 0 && (
             <div className="mt-3 rounded-lg border border-success/20 bg-success/5 p-2.5">

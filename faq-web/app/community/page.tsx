@@ -39,6 +39,8 @@ import {
   Globe2,
   ExternalLink,
 } from "lucide-react";
+import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import Header from "@/components/Header";
 import YakshaChat from "@/components/YakshaChat";
 import StatusBadge from "@/components/community/StatusBadge";
@@ -228,9 +230,45 @@ function BotReplyCard({ reply }: { reply: Reply }) {
               From FAQ + web sources
             </span>
           </div>
-          <p className="text-sm leading-relaxed text-foreground/90 whitespace-pre-line">
+          <Markdown
+            remarkPlugins={[remarkGfm]}
+            components={{
+              h1: ({ children }) => <h1 className="text-lg font-bold mt-3 mb-2">{children}</h1>,
+              h2: ({ children }) => <h2 className="text-base font-semibold mt-3 mb-2">{children}</h2>,
+              h3: ({ children }) => <h3 className="text-sm font-semibold mt-2 mb-1">{children}</h3>,
+              h4: ({ children }) => <h4 className="text-sm font-medium mt-2 mb-1">{children}</h4>,
+              p: ({ children }) => <p className="text-sm leading-relaxed my-2">{children}</p>,
+              ul: ({ children }) => <ul className="list-disc list-inside my-2 space-y-1 text-sm">{children}</ul>,
+              ol: ({ children }) => <ol className="list-decimal list-inside my-2 space-y-1 text-sm">{children}</ol>,
+              li: ({ children }) => <li className="text-sm leading-relaxed">{children}</li>,
+              code: ({ className, children, ...props }) => {
+                const match = /language-(\w+)/.exec(className || "");
+                const isInline = !className;
+                if (isInline) {
+                  return <code className="bg-muted/30 text-xs px-1.5 py-0.5 rounded font-mono" {...props}>{children}</code>;
+                }
+                return (
+                  <pre className="bg-muted/20 rounded-lg p-3 my-2 overflow-x-auto text-xs font-mono">
+                    <code className={className} {...props}>{children}</code>
+                  </pre>
+                );
+              },
+              a: ({ href, children }) => (
+                <a href={href} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">
+                  {children}
+                </a>
+              ),
+              strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+              em: ({ children }) => <em className="italic">{children}</em>,
+              del: ({ children }) => <del className="line-through opacity-70">{children}</del>,
+              blockquote: ({ children }) => (
+                <blockquote className="border-l-4 border-border pl-4 italic text-muted my-2">{children}</blockquote>
+              ),
+              hr: () => <hr className="border-border my-4" />,
+            }}
+          >
             {reply.content}
-          </p>
+          </Markdown>
 
           {(ragSources.length > 0 || webSources.length > 0) && (
             <div className="mt-3 grid gap-2 sm:grid-cols-2">
@@ -277,20 +315,30 @@ function QuestionCard({ thread: initialThread }: { thread: Thread }) {
 
     setSubmitting(true);
     try {
-      const res = await fetch(`/api/community/threads/${thread.id}/replies`, {
+      const res = await fetch(`/api/community/questions/${thread.id}/answers`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content }),
+        body: JSON.stringify({ body: content }),
       });
       const json = await res.json();
       if (!res.ok || !json.ok) {
         throw new Error(json?.error?.message ?? "Failed to post reply");
       }
 
-      // Use the reply the server actually saved (id + timestamp from DB).
+      // Map answer→reply shape so the UI stays consistent.
+      const saved = json.answer as { id: string; author: string; authorRole: "user"; body: string; timestamp: string; likes: number; status: string };
+      const newReply: Reply = {
+        id: saved.id,
+        author: saved.author,
+        authorRole: saved.authorRole,
+        content: saved.body,
+        timestamp: saved.timestamp,
+        likes: saved.likes,
+        status: saved.status as Reply["status"],
+      };
       setThread({
         ...thread,
-        replies: [...thread.replies, json.reply as Reply],
+        replies: [...thread.replies, newReply],
       });
       setReplyText("");
       setShowReplyForm(false);
@@ -341,10 +389,12 @@ function QuestionCard({ thread: initialThread }: { thread: Thread }) {
               )}
             </div>
 
-            {/* Title */}
-            <h3 className="text-base sm:text-lg font-semibold leading-snug mb-2">
-              {thread.question}
-            </h3>
+            {/* Title — navigates to the detail page */}
+            <Link href={`/community/${thread.id}`}>
+              <h3 className="text-base sm:text-lg font-semibold leading-snug mb-2 hover:text-accent transition-colors cursor-pointer">
+                {thread.question}
+              </h3>
+            </Link>
 
             {/* Meta row */}
             <div className="flex items-center gap-4 text-xs text-muted flex-wrap">
@@ -413,6 +463,13 @@ function QuestionCard({ thread: initialThread }: { thread: Thread }) {
 
         {/* Footer: reply button always visible */}
         <div className="mt-4 flex items-center gap-2">
+          <Link
+            href={`/community/${thread.id}`}
+            className="flex items-center gap-1 text-xs text-muted hover:text-accent transition-colors mr-auto"
+          >
+            <Eye size={12} />
+            View full thread
+          </Link>
           {humanReplies.length > 0 && (
             <button
               onClick={() => setExpanded(!expanded)}
@@ -537,7 +594,7 @@ export default function CommunityHome() {
 
     (async () => {
       try {
-        const res = await fetch("/api/community/threads");
+        const res = await fetch("/api/community/questions");
         const json = await res.json();
         if (cancelled) return;
         if (!res.ok || !json.ok) {
