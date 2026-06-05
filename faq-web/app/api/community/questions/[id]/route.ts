@@ -74,7 +74,7 @@ export async function GET(
       createdAt: String(doc.createdAt ?? new Date()),
     };
 
-    // Map replies → AnswerDTOs.
+    // Map replies → AnswerDTOs, splitting out the bot reply.
     const rawReplies: Reply[] = (doc.replies as Reply[]) ?? [];
     const visibleReplies = rawReplies.filter((r) => {
       if (r.status === "rejected") return false;
@@ -85,7 +85,11 @@ export async function GET(
       return true; // approved / undefined (legacy)
     });
 
-    const answers = visibleReplies.map((r, idx) => ({
+    // Separate the AI bot reply from human replies.
+    const botReply = visibleReplies.find((r) => r.authorRole === "bot");
+    const humanReplies = visibleReplies.filter((r) => r.authorRole !== "bot");
+
+    const toAnswerDTO = (r: Reply, idx: number) => ({
       id: r.id ?? String(idx),
       questionId: id,
       body: r.content,
@@ -95,9 +99,24 @@ export async function GET(
       voteScore: r.likes ?? 0,
       myVote: 0,
       reportCount: admin ? 0 : undefined,
-      citations: [] as unknown[],
+      citations: Array.isArray(r.sources)
+        ? r.sources.map((s) => ({
+            documentId: s.url ?? "",
+            title: s.title ?? "",
+            section: "",
+            version: "",
+            snippet: s.snippet ?? "",
+            score: s.score ?? 0,
+          }))
+        : [],
       createdAt: r.timestamp ?? String(doc.createdAt ?? new Date()),
-    }));
+    });
+
+    const answers = humanReplies.map((r, idx) => toAnswerDTO(r, idx));
+
+    // Shape the bot reply as a SuggestedAnswerDTO if one exists.
+    const suggestedAnswer = botReply ? toAnswerDTO(botReply, -1) : null;
+    const suggestedAnswerStatus = botReply ? "ready" : "unavailable";
 
     // Capabilities: anonymous users can read; auth needed to answer/vote.
     const capabilities = {
@@ -112,8 +131,8 @@ export async function GET(
     return ok({
       question,
       answers,
-      suggestedAnswer: null,
-      suggestedAnswerStatus: "unavailable",
+      suggestedAnswer,
+      suggestedAnswerStatus,
       summary: null,
       capabilities,
     });
