@@ -25,7 +25,7 @@ import type { NextRequest } from "next/server";
 import ConnectDB from "@/lib/mongoClient";
 import { ok, errors } from "@/lib/api";
 
-const DB_NAME = process.env.MONGODB_DB ?? "RAG_Project";
+const DB_NAME = process.env.MONGODB_DB ?? "samagama";
 
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;

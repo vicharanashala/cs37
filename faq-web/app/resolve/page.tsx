@@ -15,7 +15,10 @@ import {
   Sparkles,
   Mail,
   RefreshCw,
+  BookOpen,
+  PlusCircle,
 } from "lucide-react";
+import ManualFAQForm from "./ManualFAQForm";
 import { cn } from "@/lib/utils";
 
 interface PendingQuestion {
@@ -37,6 +40,26 @@ export default function ResolvePage() {
   const [answer, setAnswer] = useState("");
   const [filter, setFilter] = useState<"all" | "pending" | "urgent">("all");
   const [submitting, setSubmitting] = useState(false);
+  const [showManualFAQ, setShowManualFAQ] = useState(false);
+  const [liveFaqCount, setLiveFaqCount] = useState<number | null>(null);
+  const [aiSuggestion, setAiSuggestion] = useState<string | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+
+  const loadLiveFaqCount = useCallback(async () => {
+    try {
+      const res = await fetch("/api/faqs");
+      const data = await res.json();
+      if (data.ok) {
+        setLiveFaqCount(data.faqs?.length ?? data.count ?? 0);
+      }
+    } catch {
+      // silently fail
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadLiveFaqCount();
+  }, [loadLiveFaqCount]);
 
   const loadQuestions = useCallback(async () => {
     setLoading(true);
@@ -60,6 +83,33 @@ export default function ResolvePage() {
   useEffect(() => {
     void loadQuestions();
   }, [loadQuestions]);
+
+  useEffect(() => {
+    setAiSuggestion(null);
+  }, [selectedQuestion]);
+
+  const fetchAiSuggestion = useCallback(async () => {
+    if (!selectedQuestion) return;
+    setAiLoading(true);
+    setAiSuggestion(null);
+    try {
+      const res = await fetch("/api/ai/resolve-assistant", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: selectedQuestion.question }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setAiSuggestion(data.answer);
+      } else {
+        setAiSuggestion("Could not generate a suggestion right now.");
+      }
+    } catch {
+      setAiSuggestion("Network error — try again.");
+    } finally {
+      setAiLoading(false);
+    }
+  }, [selectedQuestion]);
 
   const filteredQuestions = questions.filter((q) => {
     if (filter === "pending") return q.status === "pending";
@@ -188,7 +238,7 @@ export default function ResolvePage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
-          className="grid grid-cols-3 gap-4 mb-8"
+          className="grid grid-cols-5 gap-4 mb-8"
         >
           <div className="rounded-xl border border-border bg-card p-4">
             <div className="flex items-center gap-2 mb-1">
@@ -211,7 +261,34 @@ export default function ResolvePage() {
             </div>
             <p className="text-2xl font-bold text-success">{resolvedCount}</p>
           </div>
+          <button
+            onClick={() => setShowManualFAQ((prev) => !prev)}
+            className="rounded-xl border border-amber-500/40 bg-zinc-900/60 p-4 text-left hover:border-amber-500/70 transition-all cursor-pointer"
+          >
+            <div className="flex items-center gap-2 mb-1">
+              <PlusCircle size={16} className="text-amber-400" />
+              <span className="text-xs text-muted">Manual FAQ</span>
+            </div>
+            <p className="text-sm font-medium text-amber-400">
+              {showManualFAQ ? "Close" : "Add"}
+            </p>
+          </button>
+          <div className="rounded-xl border border-amber-500/40 bg-zinc-900/60 p-4">
+            <div className="flex items-center gap-2 mb-1">
+              <BookOpen size={16} className="text-amber-400" />
+              <span className="text-xs text-muted">Live FAQ</span>
+            </div>
+            <p className="text-2xl font-bold text-amber-400">
+              {liveFaqCount !== null ? liveFaqCount : "—"}
+            </p>
+          </div>
         </motion.div>
+
+        {showManualFAQ && (
+          <div className="mb-8">
+            <ManualFAQForm />
+          </div>
+        )}
 
         {/* Filter */}
         <div className="flex items-center gap-2 mb-6">
@@ -345,6 +422,28 @@ export default function ResolvePage() {
                   </div>
                 )}
 
+                {/* AI Suggestion on click */}
+                <button
+                  onClick={fetchAiSuggestion}
+                  disabled={aiLoading}
+                  className="mb-4 flex items-center gap-2 px-3 py-2 rounded-lg border border-amber-500/30 bg-amber-500/10 text-xs font-medium text-amber-400 hover:bg-amber-500/20 transition-all disabled:opacity-50"
+                >
+                  <Sparkles size={12} />
+                  {aiLoading ? "Getting suggestion..." : "Get AI suggestion"}
+                </button>
+
+                {aiSuggestion && (
+                  <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Sparkles size={14} className="text-amber-400" />
+                      <span className="text-xs font-medium text-amber-400">AI suggestion</span>
+                    </div>
+                    <p className="text-xs text-foreground/80 leading-relaxed whitespace-pre-wrap">
+                      {aiSuggestion}
+                    </p>
+                  </div>
+                )}
+
                 <textarea
                   value={answer}
                   onChange={(e) => setAnswer(e.target.value)}
@@ -392,6 +491,8 @@ export default function ResolvePage() {
             )}
           </AnimatePresence>
         </div>
+
+
       </main>
     </div>
   );

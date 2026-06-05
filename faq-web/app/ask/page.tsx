@@ -6,6 +6,7 @@ import Header from "@/components/Header";
 import YakshaChat from "@/components/YakshaChat";
 import type { FAQ, Category } from "@/data/faqData";
 import Fuse from "fuse.js";
+import FAQSuggestionBox from "@/components/FAQSuggestionBox";
 import {
   Send,
   Lightbulb,
@@ -326,30 +327,7 @@ export default function AskPage() {
             transition={{ delay: 0.3 }}
             className="space-y-4"
           >
-            <div className="rounded-xl border border-border bg-card p-5">
-              <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                <Lightbulb size={16} className="text-accent" />
-                Tips for a good question
-              </h3>
-              <ul className="space-y-2 text-xs text-muted">
-                <li className="flex gap-2">
-                  <span className="text-accent">•</span>
-                  Be specific about your situation
-                </li>
-                <li className="flex gap-2">
-                  <span className="text-accent">•</span>
-                  Mention relevant details (dates, phase, etc.)
-                </li>
-                <li className="flex gap-2">
-                  <span className="text-accent">•</span>
-                  Check if a similar question exists first
-                </li>
-                <li className="flex gap-2">
-                  <span className="text-accent">•</span>
-                  One question per submission
-                </li>
-              </ul>
-            </div>
+            <FAQSuggestionBox question={question} faqData={faqData} />
 
             <div className="rounded-xl border border-border bg-card p-5">
               <h3 className="text-sm font-semibold mb-2">Response Time</h3>

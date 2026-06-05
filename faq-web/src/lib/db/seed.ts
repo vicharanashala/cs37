@@ -25,17 +25,33 @@ async function seed() {
   const db = client.db(DB_NAME);
 
   console.log(`\n📂  Seeding ${categories.length} categories…`);
-  const catResult = await db.collection("categories").insertMany(categories, {
-    ordered: false,
-  });
-  console.log(`   ✅  ${catResult.insertedCount} categories inserted.`);
+  try {
+    const catResult = await db.collection("categories").insertMany(categories, {
+      ordered: false,
+    });
+    console.log(`   ✅  ${catResult.insertedCount} categories inserted.`);
+  } catch (err: any) {
+    if (err.code === 11000) {
+      console.log("   ⚠️  Some categories already exist, skipping duplicates.");
+    } else {
+      throw err;
+    }
+  }
 
   console.log(`\n📝  Seeding ${faqData.length} FAQs…`);
-  const faqsWithPublished = faqData.map((faq) => ({ ...faq, isPublished: true }));
-  const faqResult = await db.collection("faqs").insertMany(faqsWithPublished, {
-    ordered: false,
-  });
-  console.log(`   ✅  ${faqResult.insertedCount} FAQs inserted.`);
+  try {
+    const faqsWithPublished = faqData.map((faq) => ({ ...faq, isPublished: true }));
+    const faqResult = await db.collection("faqs").insertMany(faqsWithPublished, {
+      ordered: false,
+    });
+    console.log(`   ✅  ${faqResult.insertedCount} FAQs inserted.`);
+  } catch (err: any) {
+    if (err.code === 11000) {
+      console.log("   ⚠️  Some FAQs already exist, skipping duplicates.");
+    } else {
+      throw err;
+    }
+  }
 
   await client.close();
   console.log("\n🎉  Seed complete. MongoDB disconnected.");
