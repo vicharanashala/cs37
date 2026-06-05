@@ -23,6 +23,7 @@ export type QuestionStatus =
   | "resolved"
   | "rejected";
 export type QuestionPriority = "normal" | "urgent";
+export type QuestionSource = "ask_page" | "yaksha_chat";
 
 export interface IRagValidation {
   decision: "approved" | "rejected";
@@ -74,6 +75,9 @@ export interface IPendingQuestion extends Document {
   resolvedAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
+
+  source?: QuestionSource;
+  faqSuggestionStatus?: "pending" | "approved" | "rejected";
 
   authorRole: "user";
   initialAnswer?: string | null;
@@ -225,6 +229,16 @@ const PendingQuestionSchema = new Schema<IPendingQuestion>(
       type: RagValidationSchema,
       default: undefined,
     },
+    source: {
+      type: String,
+      enum: ["ask_page", "yaksha_chat"] satisfies QuestionSource[],
+      default: "ask_page",
+    },
+    faqSuggestionStatus: {
+      type: String,
+      enum: ["pending", "approved", "rejected"] as const,
+      default: undefined,
+    },
   },
   {
     timestamps: true,
@@ -238,6 +252,8 @@ const PendingQuestionSchema = new Schema<IPendingQuestion>(
 PendingQuestionSchema.index({ status: 1, priority: 1, createdAt: -1 });
 // Community page lists by category + recency
 PendingQuestionSchema.index({ category: 1, createdAt: -1 });
+// FAQ suggestion queries filter by source
+PendingQuestionSchema.index({ source: 1, status: 1 });
 
 // ─── Model (singleton guard for Next.js hot-reload) ───────────────────────────
 

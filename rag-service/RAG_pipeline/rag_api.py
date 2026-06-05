@@ -136,8 +136,9 @@ class SourceDoc(BaseModel):
 
 
 class QueryResponse(BaseModel):
-    answer:  str
-    sources: list[SourceDoc]
+    answer:     str
+    sources:    list[SourceDoc]
+    confidence: float
 
 
 class SearchResponse(BaseModel):
@@ -537,8 +538,9 @@ def rag_query(req: QueryRequest):
 
     if not chunks:
         return QueryResponse(
-            answer  = "No relevant information found in the knowledge base.",
-            sources = [],
+            answer     = "No relevant information found in the knowledge base.",
+            sources    = [],
+            confidence = 0.0,
         )
 
     # Generate
@@ -560,7 +562,8 @@ def rag_query(req: QueryRequest):
                 snippet = chunk["content"][:200] + "...",
             ))
 
-    return QueryResponse(answer=answer, sources=sources)
+    avg_confidence = round(sum(c["score"] for c in chunks) / len(chunks), 4)
+    return QueryResponse(answer=answer, sources=sources, confidence=avg_confidence)
 
 
 @app.post("/validate-reply", response_model=ReplyValidationResponse)
