@@ -31,6 +31,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { categories } from "@/data/faqData";
+import ManualFAQForm from "../resolve/ManualFAQForm";
 
 interface PendingQuestion {
   id: string;
@@ -52,7 +53,7 @@ export default function AdminPage() {
   const [answer, setAnswer] = useState("");
   const [filter, setFilter] = useState<"all" | "pending" | "urgent">("all");
   const [submitting, setSubmitting] = useState(false);
-  const [tab, setTab] = useState<"questions" | "faq_suggestions">("questions");
+  const [tab, setTab] = useState<"questions" | "faq_suggestions" | "manual_faq">("questions");
   const [promoteModalOpen, setPromoteModalOpen] = useState(false);
   const [promoteCategoryId, setPromoteCategoryId] = useState(1);
   const [promoteTags, setPromoteTags] = useState("");
@@ -288,6 +289,18 @@ export default function AdminPage() {
           >
             <BookText size={14} />
             FAQ Suggestions
+          </button>
+          <button
+            onClick={() => { setTab("manual_faq"); setSelectedQuestion(null); }}
+            className={cn(
+              "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all",
+              tab === "manual_faq"
+                ? "bg-accent text-background"
+                : "text-muted hover:text-foreground"
+            )}
+          >
+            <PlusCircle size={14} />
+            Manual FAQ
           </button>
         </div>
 
@@ -533,6 +546,12 @@ export default function AdminPage() {
             )}
           </AnimatePresence>
         </div>
+
+        {tab === "manual_faq" && (
+          <div className="mt-6">
+            <ManualFAQForm />
+          </div>
+        )}
       </main>
 
       {/* Promote to FAQ Modal */}
