@@ -1,13 +1,13 @@
 "use client";
-import { Sun, Moon } from "lucide-react";  // add Sun, Moon to existing lucide import
+import { Sun, Moon } from "lucide-react";
 import { useTheme } from "./ThemeProvider";
 import NotificationBell from "./NotificationBell";
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { MessageCircle, HelpCircle, CheckCircle, Menu, X, MessageSquare, User, LogOut } from "lucide-react";
-import { useState } from "react";
+import { MessageCircle, HelpCircle, Menu, X, MessageSquare, Shield, User } from "lucide-react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/context/AuthContext";
 
@@ -16,16 +16,18 @@ const navLinks = [
   { href: "/ask", label: "Ask", icon: MessageCircle },
   // { href: "/threads", label: "Threads", icon: MessageSquare },
   { href: "/community", label: "Community", icon: User },
-  { href: "/resolve", label: "Resolve", icon: CheckCircle },
+  { href: "/admin", label: "Admin", icon: Shield },
 ];
 
 export default function Header() {
   const pathname = usePathname();
   const router = useRouter();
-  const { user, signOut } = useAuth();
+  const { user } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const { theme, toggleTheme } = useTheme();
+
+  useEffect(() => { setMounted(true); }, []);
 
   return (
     <header className="sticky top-0 z-50 border-b border-border bg-background/80 backdrop-blur-xl">
@@ -37,12 +39,8 @@ export default function Header() {
               S
             </div>
             <div className="hidden sm:block">
-              <h1 className="text-sm font-semibold leading-tight">
-                Samagama FAQ
-              </h1>
-              <p className="text-xs text-muted">
-                Vicharanashala · IIT Ropar
-              </p>
+              <h1 className="text-sm font-semibold leading-tight">Samagama FAQ</h1>
+              <p className="text-xs text-muted">Vicharanashala · IIT Ropar</p>
             </div>
           </Link>
 
@@ -102,46 +100,22 @@ export default function Header() {
               </AnimatePresence>
             </button>
 
-            <span className="hidden md:inline-flex text-xs text-muted bg-card px-2.5 py-1 rounded-full border border-border">
-              v2.0.0
-            </span>
-
             <div className="hidden md:flex items-center gap-3">
-              {user ? (
-                <div className="relative">
-                  <button
-                    onClick={() => setUserMenuOpen(!userMenuOpen)}
-                    className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-border bg-card hover:bg-card-hover transition-colors"
-                  >
-                    <div className="h-6 w-6 rounded-full bg-accent text-background flex items-center justify-center text-xs font-bold">
-                      {user.email[0].toUpperCase()}
-                    </div>
-                    <span className="text-xs text-muted max-w-32 truncate">{user.email}</span>
-                  </button>
-                  <AnimatePresence>
-                    {userMenuOpen && (
-                      <motion.div
-                        initial={{ opacity: 0, y: -4 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -4 }}
-                        className="absolute right-0 mt-2 w-48 rounded-xl border border-border bg-card shadow-lg overflow-hidden"
-                      >
-                        <button
-                          onClick={() => {
-                            signOut();
-                            router.replace("/auth/signin");
-                            setUserMenuOpen(false);
-                          }}
-                          className="w-full flex items-center gap-2 px-4 py-3 text-sm text-muted hover:text-foreground hover:bg-card-hover transition-colors"
-                        >
-                          <LogOut size={14} />
-                          Sign Out
-                        </button>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
-              ) : null}
+              {mounted && user ? (
+                <button
+                  onClick={() => router.push("/resolve")}
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-border bg-card hover:bg-card-hover transition-colors"
+                >
+                  <div className="h-6 w-6 rounded-full bg-accent text-background flex items-center justify-center text-xs font-bold">
+                    {user.email[0].toUpperCase()}
+                  </div>
+                  <span className="text-xs text-muted max-w-32 truncate">{user.email}</span>
+                </button>
+              ) : (
+                <span className="text-xs text-muted bg-card px-2.5 py-1 rounded-full border border-border">
+                  v2.0.0
+                </span>
+              )}
             </div>
 
             <button
