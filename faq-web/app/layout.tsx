@@ -9,7 +9,6 @@ const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],
 });
-
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
@@ -19,59 +18,36 @@ export const metadata: Metadata = {
   title: "Samagama FAQ Portal | Vicharanashala Internship - IIT Ropar",
   description:
     "AI-powered FAQ portal for the Vicharanashala Internship Programme at IIT Ropar. Search, ask, and get instant answers.",
-  keywords: [
-    "Samagama",
-    "FAQ",
-    "Vicharanashala",
-    "IIT Ropar",
-    "Internship",
-    "VINS",
-  ],
+  keywords: ["Samagama", "FAQ", "Vicharanashala", "IIT Ropar", "Internship", "VINS"],
 };
 
 export default function RootLayout({
   children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+}: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className="dark">
-     <body
-  className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-  suppressHydrationWarning
->
+    <html lang="en" suppressHydrationWarning>
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         <ThemeProvider>
-        <AuthProvider>
-           {children}
-        </AuthProvider>
-        <Toaster
-          position="top-right"
-          toastOptions={{
-            duration: 4000,
-            style: {
-              background: "#141414",
-              color: "#ededed",
-              border: "1px solid #2a2a2a",
-              borderRadius: "12px",
-              padding: "12px 16px",
-              fontSize: "14px",
-            },
-            success: {
-              iconTheme: {
-                primary: "#22c55e",
-                secondary: "#141414",
+          <AuthProvider>
+            {children}
+          </AuthProvider>
+          <Toaster
+            position="top-right"
+            toastOptions={{
+              duration: 4000,
+              style: {
+                background: "#141414",
+                color: "#ededed",
+                border: "1px solid #2a2a2a",
+                borderRadius: "12px",
+                padding: "12px 16px",
+                fontSize: "14px",
               },
-            },
-            error: {
-              iconTheme: {
-                primary: "#ef4444",
-                secondary: "#141414",
-              },
-            },
-          }}
-        />
+              success: { iconTheme: { primary: "#22c55e", secondary: "#141414" } },
+              error: { iconTheme: { primary: "#ef4444", secondary: "#141414" } },
+            }}
+          />
         </ThemeProvider>
-       
       </body>
     </html>
   );
