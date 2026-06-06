@@ -256,10 +256,10 @@ Answer the user's question using ONLY the context provided below.
 If the answer is not in the context, say: "I don't have information about that. Please contact support via the Yaksha chat at samagama.in."
 Be concise, friendly, and accurate. Do not make up information.
 
-FORMATTING RULES (strict):
-- For bold text (e.g. section labels like "Commitment:" or "Structure:"), use HTML <strong>...</strong> tags.
-- Do NOT use markdown asterisks (**bold**) or underscores (__bold__) for emphasis.
-- You may still use standard markdown for lists, paragraphs, and links.
+FORMATTING RULES:
+- Use standard markdown for structure: **bold** for inline labels (e.g. "**Commitment:**"),
+  blank lines between paragraphs, and `-` for bullet lists.
+- Do not emit raw HTML tags. The chat renders markdown natively.
 
 CONTEXT:
 {context}
@@ -267,17 +267,6 @@ CONTEXT:
 QUESTION: {question}
 
 ANSWER:"""
-
-
-def _markdown_bold_to_strong(text: str) -> str:
-    """
-    Convert any stray markdown **bold** / __bold__ markers in the LLM response
-    into HTML <strong>...</strong> tags, so the frontend renders them as bold
-    without exposing raw asterisks to the user.
-    """
-    text = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", text, flags=re.DOTALL)
-    text = re.sub(r"__(.+?)__", r"<strong>\1</strong>", text, flags=re.DOTALL)
-    return text
 
 
 def generate_answer(prompt: str) -> str:
@@ -290,7 +279,7 @@ def generate_answer(prompt: str) -> str:
             max_output_tokens= 512,
         ),
     )
-    return _markdown_bold_to_strong(response.text.strip())
+    return response.text.strip()
 
 
 def do_web_search(question: str, top_k: int = 3) -> list[dict]:
@@ -345,10 +334,10 @@ If neither source contains relevant information, say: "I don't have enough infor
 
 Be concise, friendly, and accurate. Do not make up information. Cite your sources in your answer when using web results (e.g. "According to [Web 1], ...").
 
-FORMATTING RULES (strict):
-- For bold text (e.g. section labels like "Commitment:" or "Structure:"), use HTML <strong>...</strong> tags.
-- Do NOT use markdown asterisks (**bold**) or underscores (__bold__) for emphasis.
-- You may still use standard markdown for lists, paragraphs, and links.
+FORMATTING RULES:
+- Use standard markdown for structure: **bold** for inline labels (e.g. "**Commitment:**"),
+  blank lines between paragraphs, and `-` for bullet lists.
+- Do not emit raw HTML tags. The chat renders markdown natively.
 
 ════════════════════════════════════════
 INSTITUTIONAL SOURCES (RAG):
