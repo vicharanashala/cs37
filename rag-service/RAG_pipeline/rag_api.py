@@ -256,6 +256,11 @@ Answer the user's question using ONLY the context provided below.
 If the answer is not in the context, say: "I don't have information about that. Please contact support via the Yaksha chat at samagama.in."
 Be concise, friendly, and accurate. Do not make up information.
 
+FORMATTING RULES:
+- Use standard markdown for structure: **bold** for inline labels (e.g. "**Commitment:**"),
+  blank lines between paragraphs, and `-` for bullet lists.
+- Do not emit raw HTML tags. The chat renders markdown natively.
+
 CONTEXT:
 {context}
 
@@ -328,6 +333,11 @@ Use the WEB SEARCH RESULTS section only for general knowledge not covered by the
 If neither source contains relevant information, say: "I don't have enough information about that. Please contact support via the Yaksha chat at samagama.in."
 
 Be concise, friendly, and accurate. Do not make up information. Cite your sources in your answer when using web results (e.g. "According to [Web 1], ...").
+
+FORMATTING RULES:
+- Use standard markdown for structure: **bold** for inline labels (e.g. "**Commitment:**"),
+  blank lines between paragraphs, and `-` for bullet lists.
+- Do not emit raw HTML tags. The chat renders markdown natively.
 
 ════════════════════════════════════════
 INSTITUTIONAL SOURCES (RAG):
