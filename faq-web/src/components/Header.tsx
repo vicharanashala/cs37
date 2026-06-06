@@ -1,4 +1,7 @@
 "use client";
+import { Sun, Moon } from "lucide-react";
+import { useTheme } from "./ThemeProvider";
+import NotificationBell from "./NotificationBell";
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -22,8 +25,8 @@ export default function Header() {
   const { user } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const { theme, toggleTheme } = useTheme();
 
-  // Only render auth-dependent UI on the client to avoid SSR/client mismatch.
   useEffect(() => { setMounted(true); }, []);
 
   return (
@@ -36,12 +39,8 @@ export default function Header() {
               S
             </div>
             <div className="hidden sm:block">
-              <h1 className="text-sm font-semibold leading-tight">
-                Samagama FAQ
-              </h1>
-              <p className="text-xs text-muted">
-                Vicharanashala · IIT Ropar
-              </p>
+              <h1 className="text-sm font-semibold leading-tight">Samagama FAQ</h1>
+              <p className="text-xs text-muted">Vicharanashala · IIT Ropar</p>
             </div>
           </Link>
 
@@ -68,33 +67,65 @@ export default function Header() {
             })}
           </nav>
 
-          {/* Version Badge */}
-          <div className="hidden md:flex items-center gap-3">
-            {mounted && user ? (
-              <button
-                onClick={() => router.push("/resolve")}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-border bg-card hover:bg-card-hover transition-colors"
-              >
+          <div className="flex items-center gap-2">
+            <NotificationBell />
+
+            <button
+              onClick={toggleTheme}
+              className="p-2 rounded-lg hover:bg-card transition-colors"
+              aria-label="Toggle theme"
+            >
+              <AnimatePresence mode="wait" initial={false}>
+                {theme === "dark" ? (
+                  <motion.span
+                    key="sun"
+                    initial={{ rotate: -90, opacity: 0 }}
+                    animate={{ rotate: 0, opacity: 1 }}
+                    exit={{ rotate: 90, opacity: 0 }}
+                    transition={{ duration: 0.2 }}
+                  >
+                    <Sun size={18} className="text-muted" />
+                  </motion.span>
+                ) : (
+                  <motion.span
+                    key="moon"
+                    initial={{ rotate: 90, opacity: 0 }}
+                    animate={{ rotate: 0, opacity: 1 }}
+                    exit={{ rotate: -90, opacity: 0 }}
+                    transition={{ duration: 0.2 }}
+                  >
+                    <Moon size={18} className="text-muted" />
+                  </motion.span>
+                )}
+              </AnimatePresence>
+            </button>
+
+            <div className="hidden md:flex items-center gap-3">
+              {mounted && user ? (
+                <button
+                  onClick={() => router.push("/resolve")}
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-border bg-card hover:bg-card-hover transition-colors"
+                >
                   <div className="h-6 w-6 rounded-full bg-accent text-background flex items-center justify-center text-xs font-bold">
                     {user.email[0].toUpperCase()}
                   </div>
                   <span className="text-xs text-muted max-w-32 truncate">{user.email}</span>
                 </button>
-            ) : (
-              <span className="text-xs text-muted bg-card px-2.5 py-1 rounded-full border border-border">
-                v2.0.0
-              </span>
-            )}
-          </div>
+              ) : (
+                <span className="text-xs text-muted bg-card px-2.5 py-1 rounded-full border border-border">
+                  v2.0.0
+                </span>
+              )}
+            </div>
 
-          {/* Mobile Menu Button */}
-          <button
-            onClick={() => setMobileOpen(!mobileOpen)}
-            className="md:hidden p-2 rounded-lg hover:bg-card transition-colors"
-            aria-label="Toggle menu"
-          >
-            {mobileOpen ? <X size={20} /> : <Menu size={20} />}
-          </button>
+            <button
+              onClick={() => setMobileOpen(!mobileOpen)}
+              className="md:hidden p-2 rounded-lg hover:bg-card transition-colors"
+              aria-label="Toggle menu"
+            >
+              {mobileOpen ? <X size={20} /> : <Menu size={20} />}
+            </button>
+          </div>
         </div>
       </div>
 

@@ -1,6 +1,20 @@
 @import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
 
 :root {
+  --background: #f9f9f9;
+  --foreground: #111111;
+  --card: #ffffff;
+  --card-hover: #f0f0f0;
+  --border: #e0e0e0;
+  --accent: #d97706;
+  --accent-hover: #b45309;
+  --muted: #888888;
+  --success: #16a34a;
+  --danger: #dc2626;
+}
+
+.dark {
   --background: #0a0a0a;
   --foreground: #ededed;
   --card: #141414;
@@ -34,31 +48,9 @@ body {
   font-family: var(--font-sans), system-ui, -apple-system, sans-serif;
 }
 
-/* Custom scrollbar */
-::-webkit-scrollbar {
-  width: 6px;
-}
-
-::-webkit-scrollbar-track {
-  background: var(--background);
-}
-
-::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 3px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: var(--muted);
-}
-
-/* Smooth scroll */
-html {
-  scroll-behavior: smooth;
-}
-
-/* Selection color */
-::selection {
-  background: var(--accent);
-  color: var(--background);
-}
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--background); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+html { scroll-behavior: smooth; }
+::selection { background: var(--accent); color: var(--background); }

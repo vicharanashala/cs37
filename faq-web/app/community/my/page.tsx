@@ -1,38 +1,23 @@
 "use client";
 
-/**
- * app/community/my/page.tsx
- *
- * "My Contributions": the student's own questions and answers with their
- * current review status.
- *
- * Identity uses two signals:
- *   - x-student-id header  → community_questions / community_answers
- *   - Authorization: Bearer <jwt> → pending_questions (legacy /ask flow)
- */
-
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { MessageSquare, HelpCircle, Clock } from "lucide-react";
 import Header from "@/components/Header";
 import StatusBadge from "@/components/community/StatusBadge";
+import { MyContributionsSkeleton } from "@/components/Skeletons";
 import { api } from "@/lib/community/client";
 import { getAuthToken } from "@/lib/auth";
 import type { AnswerDTO, QuestionDTO } from "@/lib/community/types";
 import type { AnswerStatus, QuestionStatus } from "@/lib/community/constants";
 
-// Extend QuestionDTO locally to carry the isLegacy flag the server adds.
 type QuestionDTOExtended = QuestionDTO & { isLegacy?: boolean };
 
-/**
- * Map a QuestionStatus to the nearest AnswerStatus so we can reuse
- * <StatusBadge> (which was designed for answers) on question cards too.
- */
 function questionStatusToAnswerStatus(status: QuestionStatus): AnswerStatus {
   switch (status) {
     case "approved": return "approved";
-    case "open":     return "approved";      // open = publicly visible
+    case "open":     return "approved";
     case "closed":   return "hidden";
     case "hidden":   return "hidden";
     case "deleted":  return "deleted";
@@ -82,12 +67,11 @@ export default function MyContributionsPage() {
         </motion.h1>
 
         {loading ? (
-          <div className="py-16 text-center text-muted text-sm">Loading…</div>
+          <MyContributionsSkeleton />
         ) : error ? (
           <div className="py-16 text-center text-sm text-muted">{error}</div>
         ) : (
           <div className="space-y-10">
-            {/* Questions */}
             <section>
               <h2 className="text-sm font-semibold text-muted mb-3 flex items-center gap-2">
                 <HelpCircle size={15} /> Questions I asked ({questions.length})
@@ -120,21 +104,16 @@ export default function MyContributionsPage() {
                         </div>
                       </div>
                     );
-
-                    // Legacy questions don't have a /community/:id page.
                     return q.isLegacy ? (
                       <div key={q.id}>{inner}</div>
                     ) : (
-                      <Link key={q.id} href={`/community/${q.id}`}>
-                        {inner}
-                      </Link>
+                      <Link key={q.id} href={`/community/${q.id}`}>{inner}</Link>
                     );
                   })}
                 </div>
               )}
             </section>
 
-            {/* Answers */}
             <section>
               <h2 className="text-sm font-semibold text-muted mb-3 flex items-center gap-2">
                 <MessageSquare size={15} /> Answers I submitted ({answers.length})
@@ -150,18 +129,12 @@ export default function MyContributionsPage() {
                       className="block rounded-xl border border-border bg-card p-4 hover:border-muted transition-all"
                     >
                       <div className="flex items-center justify-between gap-3 mb-1.5">
-                        <p className="text-xs text-muted truncate">
-                          on: {a.questionTitle}
-                        </p>
+                        <p className="text-xs text-muted truncate">on: {a.questionTitle}</p>
                         <StatusBadge status={a.status} />
                       </div>
-                      <p className="text-sm text-foreground/80 line-clamp-2">
-                        {a.body}
-                      </p>
+                      <p className="text-sm text-foreground/80 line-clamp-2">{a.body}</p>
                       {a.review && a.review.reasons.length > 0 && (
-                        <p className="text-xs text-muted mt-1.5">
-                          {a.review.reasons.join(", ")}
-                        </p>
+                        <p className="text-xs text-muted mt-1.5">{a.review.reasons.join(", ")}</p>
                       )}
                     </Link>
                   ))}
