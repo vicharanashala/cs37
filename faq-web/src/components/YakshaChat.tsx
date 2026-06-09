@@ -4,8 +4,26 @@ import { useState, useRef, useEffect, useCallback, type ReactNode } from "react"
 import { motion, AnimatePresence } from "framer-motion";
 import { MessageCircle, X, Send, Bot, User, Sparkles, Lightbulb, PlusCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
+import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 const RAG_BASE = process.env.NEXT_PUBLIC_RAG_API ?? "http://localhost:8000";
+
+// Markdown components styling tailored for YakshaChat bubble size
+const mdComponents: React.ComponentProps<typeof Markdown>["components"] = {
+  h1: ({ children }) => <h1 className="text-sm font-bold mt-2 mb-1">{children}</h1>,
+  h2: ({ children }) => <h2 className="text-xs font-semibold mt-1.5 mb-1">{children}</h2>,
+  h3: ({ children }) => <h3 className="text-xs font-semibold mt-1 mb-0.5">{children}</h3>,
+  p: ({ children }) => <p className="text-sm leading-relaxed my-1">{children}</p>,
+  ul: ({ children }) => <ul className="list-disc list-inside my-1 space-y-0.5 text-sm">{children}</ul>,
+  ol: ({ children }) => <ol className="list-decimal list-inside my-1 space-y-0.5 text-sm">{children}</ol>,
+  li: ({ children }) => <li className="text-sm leading-relaxed">{children}</li>,
+  strong: ({ children }) => <strong className="font-extrabold text-accent tracking-tight">{children}</strong>,
+  em: ({ children }) => <em className="italic">{children}</em>,
+  a: ({ href, children }) => (
+    <a href={href} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">{children}</a>
+  ),
+};
 
 interface SourceDoc {
   title: string;
@@ -351,7 +369,13 @@ export default function YakshaChat() {
                             : "bg-card border border-border rounded-bl-md"
                         )}
                       >
-                        <p className="whitespace-pre-line">{msg.content}</p>
+                        {msg.role === "user" ? (
+                          <p className="whitespace-pre-line">{msg.content}</p>
+                        ) : (
+                          <Markdown remarkPlugins={[remarkGfm]} components={mdComponents}>
+                            {msg.content}
+                          </Markdown>
+                        )}
                         {msg.sources && msg.sources.length > 0 && (
                           <div className="mt-2 pt-2 border-t border-border/50">
                             <p className="text-xs text-muted mb-1">Sources:</p>
