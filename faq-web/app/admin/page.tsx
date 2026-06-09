@@ -84,6 +84,7 @@ export default function AdminPage() {
   const [promoteModalOpen, setPromoteModalOpen] = useState(false);
   const [promoteCategoryId, setPromoteCategoryId] = useState(1);
   const [promoteTags, setPromoteTags] = useState("");
+  const [adminEmail, setAdminEmail] = useState("");
   const [aiSuggestion, setAiSuggestion] = useState<{
     found: boolean;
     confidence?: number;
@@ -117,6 +118,17 @@ export default function AdminPage() {
   useEffect(() => {
     void loadQuestions();
   }, [loadQuestions]);
+
+  useEffect(() => {
+    const fetchAdmin = async () => {
+      try {
+        const res = await fetch("/api/admin/auth/me");
+        const data = await res.json();
+        if (data.admin?.email) setAdminEmail(data.admin.email);
+      } catch {}
+    };
+    void fetchAdmin();
+  }, []);
 
   const filteredQuestions = questions.filter((q) => {
     if (filter === "pending") return q.status === "pending";
@@ -319,21 +331,27 @@ export default function AdminPage() {
                 Admin panel — review, answer, or reject pending questions
               </p>
             </div>
-            <button
-              onClick={loadQuestions}
-              disabled={loading}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl border border-border text-muted hover:text-foreground hover:border-muted transition-all text-sm"
-            >
-              <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
-              Refresh
-            </button>
-            <button
-              onClick={handleLogout}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-danger/10 border border-danger/30 text-danger hover:bg-danger/20 transition-all text-sm font-medium"
-            >
-              <LogOut size={14} />
-              Logout
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={loadQuestions}
+                disabled={loading}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl border border-border text-muted hover:text-foreground hover:border-muted transition-all text-sm"
+              >
+                <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
+                Refresh
+              </button>
+              <div className="flex items-center gap-3 px-4 py-2 rounded-xl border border-border bg-card">
+                <span className="w-2 h-2 rounded-full bg-accent" />
+                <span className="text-sm text-foreground">{adminEmail || "admin"}</span>
+                <button
+                  onClick={handleLogout}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-danger/10 border border-danger/30 text-danger hover:bg-danger/20 transition-all text-xs font-medium"
+                >
+                  <LogOut size={12} />
+                  Logout
+                </button>
+              </div>
+            </div>
           </div>
         </motion.div>
 
