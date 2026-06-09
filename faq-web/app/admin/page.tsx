@@ -35,6 +35,7 @@ import {
   ShieldAlert,
   Bot,
   User as UserIcon,
+  LogOut,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { categories } from "@/data/faqData";
@@ -265,6 +266,12 @@ export default function AdminPage() {
     setPromoteModalOpen(true);
   };
 
+  const handleLogout = () => {
+    localStorage.removeItem("samagama_admin_key");
+    document.cookie = "admin_session=; path=/; max-age=0";
+    window.location.href = "/admin/login";
+  };
+
   const handleAiSuggest = async () => {
     if (!selectedQuestion) return;
     setAiLoading(true);
@@ -319,6 +326,13 @@ export default function AdminPage() {
             >
               <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
               Refresh
+            </button>
+            <button
+              onClick={handleLogout}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-danger/10 border border-danger/30 text-danger hover:bg-danger/20 transition-all text-sm font-medium"
+            >
+              <LogOut size={14} />
+              Logout
             </button>
           </div>
         </motion.div>
