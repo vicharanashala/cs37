@@ -35,6 +35,7 @@ import {
   ShieldAlert,
   Bot,
   User as UserIcon,
+  LogOut,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { categories } from "@/data/faqData";
@@ -277,6 +278,12 @@ export default function AdminPage() {
     setPromoteModalOpen(true);
   };
 
+  const handleLogout = () => {
+    localStorage.removeItem("samagama_admin_key");
+    document.cookie = "admin_session=; path=/; max-age=0";
+    window.location.href = "/admin/login";
+  };
+
   const handleAiSuggest = async () => {
     if (!selectedQuestion) return;
     setAiLoading(true);
@@ -336,6 +343,13 @@ export default function AdminPage() {
               <div className="flex items-center gap-2 text-sm text-muted">
                 <span className="w-2 h-2 rounded-full bg-accent" />
                 <span>{adminEmail || "admin"}</span>
+                <button
+                  onClick={handleLogout}
+                  className="ml-1 flex items-center gap-1 px-2 py-1 rounded-lg text-danger hover:bg-danger/10 transition-all text-xs font-medium"
+                >
+                  <LogOut size={12} />
+                  Logout
+                </button>
               </div>
             </div>
           </div>
