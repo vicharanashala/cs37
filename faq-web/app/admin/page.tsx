@@ -33,7 +33,6 @@ import { cn } from "@/lib/utils";
 import { categories } from "@/data/faqData";
 import ManualFAQForm from "../resolve/ManualFAQForm";
 import ResolveAssistant from "../resolve/ResolveAssistant";
-import ManualFAQForm from "../resolve/ManualFAQForm";
 
 interface PendingQuestion {
   id: string;
@@ -304,18 +303,6 @@ export default function AdminPage() {
             <PlusCircle size={14} />
             Manual FAQ
           </button>
-          <button
-            onClick={() => { setTab("manual_faq"); setSelectedQuestion(null); }}
-            className={cn(
-              "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all",
-              tab === "manual_faq"
-                ? "bg-accent text-background"
-                : "text-muted hover:text-foreground"
-            )}
-          >
-            <PlusCircle size={14} />
-            Manual FAQ
-          </button>
         </div>
 
         {/* Stats (questions tab only) */}
@@ -573,11 +560,6 @@ export default function AdminPage() {
           <ResolveAssistant />
         </div>
 
-        {tab === "manual_faq" && (
-          <div className="mt-6">
-            <ManualFAQForm />
-          </div>
-        )}
       </main>
 
       {/* Promote to FAQ Modal */}
