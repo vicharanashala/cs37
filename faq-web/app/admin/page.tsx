@@ -340,17 +340,17 @@ export default function AdminPage() {
                 <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
                 Refresh
               </button>
-              <div className="flex items-center gap-3 px-4 py-2 rounded-xl border border-border bg-card">
+              <div className="flex items-center gap-2 text-sm text-muted">
                 <span className="w-2 h-2 rounded-full bg-accent" />
-                <span className="text-sm text-foreground">{adminEmail || "admin"}</span>
-                <button
-                  onClick={handleLogout}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-danger/10 border border-danger/30 text-danger hover:bg-danger/20 transition-all text-xs font-medium"
-                >
-                  <LogOut size={12} />
-                  Logout
-                </button>
+                <span>{adminEmail || "admin"}</span>
               </div>
+              <button
+                onClick={handleLogout}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-danger/10 border border-danger/30 text-danger hover:bg-danger/20 transition-all text-sm font-medium"
+              >
+                <LogOut size={14} />
+                Logout
+              </button>
             </div>
           </div>
         </motion.div>
