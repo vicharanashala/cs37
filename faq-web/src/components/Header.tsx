@@ -20,7 +20,7 @@ const navLinks = [
 export default function Header() {
   const pathname = usePathname();
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, role } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
 
@@ -48,7 +48,7 @@ export default function Header() {
 
           {/* Desktop Nav */}
           <nav className="hidden md:flex items-center gap-1">
-            {navLinks.map((link) => {
+            {navLinks.filter((link) => link.href !== "/admin" || role === "admin").map((link) => {
               const isActive = pathname === link.href;
               const Icon = link.icon;
               return (
@@ -109,7 +109,7 @@ export default function Header() {
             className="md:hidden border-t border-border bg-background"
           >
             <nav className="px-4 py-3 space-y-1">
-              {navLinks.map((link) => {
+              {navLinks.filter((link) => link.href !== "/admin" || role === "admin").map((link) => {
                 const isActive = pathname === link.href;
                 const Icon = link.icon;
                 return (

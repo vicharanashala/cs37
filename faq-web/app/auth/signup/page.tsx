@@ -6,8 +6,10 @@ import Link from "next/link";
 import AuthCard from "@/components/auth/AuthCard";
 import AuthInput from "@/components/auth/AuthInput";
 import { useAuth } from "@/context/AuthContext";
-import { Lock, Loader2 } from "lucide-react";
+import { Lock, Shield, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+const ADMIN_PASSCODE = "Vicharanashala-FAQ";
 
 export default function SignUpPage() {
   const router = useRouter();
@@ -15,12 +17,32 @@ export default function SignUpPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [passcode, setPasscode] = useState("");
+  const [role, setRole] = useState<"user" | "admin">("user");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+
+    if (role === "admin") {
+      if (passcode !== ADMIN_PASSCODE) {
+        setError("Invalid Admin Passcode");
+        return;
+      }
+      const payload = btoa(
+        JSON.stringify({
+          userId: "admin",
+          email: "admin@vicharanashala.org",
+          exp: Math.floor(Date.now() / 1000) + 86400 * 7,
+        })
+      );
+      const fakeToken = `admin.${payload}.fake`;
+      signUp(fakeToken, "admin");
+      router.replace("/admin");
+      return;
+    }
 
     if (password !== confirmPassword) {
       setError("Passwords do not match");
@@ -48,7 +70,7 @@ export default function SignUpPage() {
         return;
       }
 
-      signUp(data.token);
+      signUp(data.token, role);
       router.replace("/");
     } catch {
       setError("Network error. Please check your connection and try again.");
@@ -59,8 +81,8 @@ export default function SignUpPage() {
 
   return (
     <AuthCard
-      title="Create account"
-      subtitle="Join the Samagama FAQ community"
+      title={role === "admin" ? "Admin Registration" : "Create account"}
+      subtitle={role === "admin" ? "Enter the admin passcode to continue" : "Join the Samagama FAQ community"}
       footer={
         <p className="text-sm text-muted">
           Already have an account?{" "}
@@ -71,35 +93,78 @@ export default function SignUpPage() {
       }
     >
       <form onSubmit={handleSubmit} className="space-y-5">
-        <AuthInput
-          label="Email"
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          placeholder="you@example.com"
-          required
-          autoComplete="email"
-        />
+        <div>
+          <label className="block text-sm font-medium mb-2">Register as</label>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => { setRole("user"); setError(""); }}
+              className={cn(
+                "flex-1 py-2.5 rounded-xl text-sm font-medium transition-all border",
+                role === "user"
+                  ? "bg-accent text-background border-accent"
+                  : "bg-card text-muted border-border hover:text-foreground"
+              )}
+            >
+              User
+            </button>
+            <button
+              type="button"
+              onClick={() => { setRole("admin"); setError(""); }}
+              className={cn(
+                "flex-1 py-2.5 rounded-xl text-sm font-medium transition-all border",
+                role === "admin"
+                  ? "bg-accent text-background border-accent"
+                  : "bg-card text-muted border-border hover:text-foreground"
+              )}
+            >
+              Admin
+            </button>
+          </div>
+        </div>
 
-        <AuthInput
-          label="Password"
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          placeholder="At least 8 characters"
-          required
-          autoComplete="new-password"
-        />
+        {role === "user" ? (
+          <>
+            <AuthInput
+              label="Email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@example.com"
+              required
+              autoComplete="email"
+            />
 
-        <AuthInput
-          label="Confirm Password"
-          type="password"
-          value={confirmPassword}
-          onChange={(e) => setConfirmPassword(e.target.value)}
-          placeholder="Repeat your password"
-          required
-          autoComplete="new-password"
-        />
+            <AuthInput
+              label="Password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="At least 8 characters"
+              required
+              autoComplete="new-password"
+            />
+
+            <AuthInput
+              label="Confirm Password"
+              type="password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              placeholder="Repeat your password"
+              required
+              autoComplete="new-password"
+            />
+          </>
+        ) : (
+          <AuthInput
+            label="Admin Passcode"
+            type="password"
+            value={passcode}
+            onChange={(e) => setPasscode(e.target.value)}
+            placeholder="Enter admin passcode"
+            required
+          />
+        )}
 
         {error && (
           <div className="text-sm text-danger bg-danger/10 border border-danger/30 rounded-xl px-4 py-3">
@@ -124,8 +189,8 @@ export default function SignUpPage() {
             </>
           ) : (
             <>
-              <Lock size={16} />
-              Create Account
+              {role === "admin" ? <Shield size={16} /> : <Lock size={16} />}
+              {role === "admin" ? "Register as Admin" : "Create Account"}
             </>
           )}
         </button>

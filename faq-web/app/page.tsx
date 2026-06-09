@@ -23,7 +23,7 @@ export default function FAQPage() {
 
   useEffect(() =>  {
       if (!authLoading && !token) {
-        router.replace("/auth/signin");
+        router.replace("/auth/signup");
       }
     }, [authLoading, token, router]);
 

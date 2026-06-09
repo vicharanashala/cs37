@@ -5,6 +5,7 @@
  */
 
 export const AUTH_TOKEN_KEY = "auth_token";
+export const AUTH_ROLE_KEY = "auth_role";
 
 export function getAuthToken(): string | null {
   if (typeof window === "undefined") return null;
@@ -19,4 +20,21 @@ export function setAuthToken(token: string): void {
 export function clearAuthToken(): void {
   if (typeof window === "undefined") return;
   localStorage.removeItem(AUTH_TOKEN_KEY);
+}
+
+export function getAuthRole(): "user" | "admin" | null {
+  if (typeof window === "undefined") return null;
+  const role = localStorage.getItem(AUTH_ROLE_KEY);
+  if (role === "user" || role === "admin") return role;
+  return null;
+}
+
+export function setAuthRole(role: "user" | "admin"): void {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(AUTH_ROLE_KEY, role);
+}
+
+export function clearAuthRole(): void {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem(AUTH_ROLE_KEY);
 }

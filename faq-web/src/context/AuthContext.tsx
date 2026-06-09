@@ -14,7 +14,7 @@ import {
   useEffect,
   useState,
 } from "react";
-import { clearAuthToken, getAuthToken, setAuthToken } from "@/lib/auth";
+import { clearAuthToken, getAuthToken, setAuthToken, clearAuthRole, getAuthRole, setAuthRole } from "@/lib/auth";
 import type { JwtPayload } from "@/lib/jwt";
 
 /**
@@ -46,12 +46,13 @@ interface AuthUser {
 interface AuthState {
   user: AuthUser | null;
   token: string | null;
+  role: "user" | "admin" | null;
   loading: boolean;
 }
 
 interface AuthContextValue extends AuthState {
-  signIn: (token: string) => void;
-  signUp: (token: string) => void;
+  signIn: (token: string, role: "user" | "admin") => void;
+  signUp: (token: string, role: "user" | "admin") => void;
   signOut: () => void;
 }
 
@@ -65,42 +66,48 @@ function readInitialState(): AuthState {
       return {
         user: { userId: payload.userId, email: payload.email },
         token: stored,
+        role: getAuthRole(),
         loading: false,
       };
     }
     clearAuthToken();
   }
-  return { user: null, token: null, loading: false };
+  return { user: null, token: null, role: null, loading: false };
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<AuthState>(readInitialState);
 
-  const signIn = useCallback((newToken: string) => {
+  const signIn = useCallback((newToken: string, role: "user" | "admin") => {
     const payload = decodeToken(newToken);
     if (!payload) return;
     setAuthToken(newToken);
+    setAuthRole(role);
     setState({
       user: { userId: payload.userId, email: payload.email },
       token: newToken,
+      role,
       loading: false,
     });
   }, []);
 
-  const signUp = useCallback((newToken: string) => {
+  const signUp = useCallback((newToken: string, role: "user" | "admin") => {
     const payload = decodeToken(newToken);
     if (!payload) return;
     setAuthToken(newToken);
+    setAuthRole(role);
     setState({
       user: { userId: payload.userId, email: payload.email },
       token: newToken,
+      role,
       loading: false,
     });
   }, []);
 
   const signOut = useCallback(() => {
     clearAuthToken();
-    setState({ user: null, token: null, loading: false });
+    clearAuthRole();
+    setState({ user: null, token: null, role: null, loading: false });
   }, []);
 
   return (
