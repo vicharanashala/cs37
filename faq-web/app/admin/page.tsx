@@ -40,7 +40,6 @@ import { cn } from "@/lib/utils";
 import { categories } from "@/data/faqData";
 import ManualFAQForm from "../resolve/ManualFAQForm";
 import ResolveAssistant from "../resolve/ResolveAssistant";
-
 interface PendingQuestion {
   id: string;
   question: string;
