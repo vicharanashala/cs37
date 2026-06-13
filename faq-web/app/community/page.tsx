@@ -15,6 +15,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import toast from "react-hot-toast";
+import popularsearchers from "@/components/community/popularsearchers";
 import {
   MessageSquare,
   MessageCircle,
@@ -44,6 +45,7 @@ import remarkGfm from "remark-gfm";
 import Header from "@/components/Header";
 import YakshaChat from "@/components/YakshaChat";
 import StatusBadge from "@/components/community/StatusBadge";
+import PopularSearches from "@/components/community/popularsearchers";
 import { cn } from "@/lib/utils";
 import type { Thread, Reply, ReplySource } from "@/lib/community/threadModel";
 
@@ -587,6 +589,27 @@ export default function CommunityHome() {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<string>("recent");
   const [category, setCategory] = useState<string | null>(null);
+  useEffect(() => {
+  if (!query.trim()) return;
+
+  const timer = setTimeout(async () => {
+    try {
+      await fetch("/api/search/track", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          query: query.trim(),
+        }),
+      });
+    } catch (err) {
+      console.error("Failed to track search", err);
+    }
+  }, 1500);
+
+  return () => clearTimeout(timer);
+}, [query]);
 
   // Fetch threads from the database (GET /api/community/threads).
   useEffect(() => {
@@ -719,6 +742,7 @@ export default function CommunityHome() {
               className="w-full bg-card border border-border rounded-xl pl-11 pr-4 py-3 text-sm focus:outline-none focus:border-accent transition-colors placeholder:text-muted"
             />
           </motion.div>
+          <PopularSearches onSelect={setQuery} />
         </div>
       </section>
 
