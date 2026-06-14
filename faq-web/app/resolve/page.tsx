@@ -26,6 +26,7 @@ import {
   Calendar,
   ExternalLink,
   Inbox,
+  LogOut,
 } from "lucide-react";
 import Header from "@/components/Header";
 import StatusBadge from "@/components/community/StatusBadge";
@@ -192,7 +193,7 @@ function AnswerCard({ a }: { a: AnswerDTO }) {
 
 export default function ProfilePage() {
   const router = useRouter();
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, signOut } = useAuth();
 
   const [questions, setQuestions] = useState<QuestionDTOExtended[]>([]);
   const [answers, setAnswers] = useState<AnswerDTO[]>([]);
@@ -282,6 +283,13 @@ export default function ProfilePage() {
               >
                 Browse Q&amp;A
               </Link>
+              <button
+                onClick={() => { signOut(); router.replace("/auth/signin"); }}
+                className="text-xs px-3 py-1.5 rounded-lg border border-danger/30 text-danger hover:bg-danger/10 transition-colors flex items-center justify-center gap-1.5"
+              >
+                <LogOut size={12} />
+                Sign out
+              </button>
             </div>
           </div>
         </motion.div>

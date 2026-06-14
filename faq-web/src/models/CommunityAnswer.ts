@@ -50,6 +50,7 @@ export interface ICommunityAnswer extends Document {
   institutionId: string;
   questionId: Types.ObjectId;
   authorStudentId: string;
+  authorEmail?: string;
   body: string;
   status: AnswerStatus;
   review?: IAnswerReview;
@@ -112,6 +113,7 @@ const CommunityAnswerSchema = new Schema<ICommunityAnswer>(
       index: true,
     },
     authorStudentId: { type: String, required: true },
+    authorEmail: { type: String, default: "" },
     body: { type: String, required: true, maxlength: 5000 },
     status: {
       type: String,

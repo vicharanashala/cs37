@@ -45,6 +45,7 @@ import Header from "@/components/Header";
 import YakshaChat from "@/components/YakshaChat";
 import StatusBadge from "@/components/community/StatusBadge";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/context/AuthContext";
 import type { Thread, Reply, ReplySource } from "@/lib/community/threadModel";
 
 // ---------------------------------------------------------------------------
@@ -104,6 +105,9 @@ function ReplyCard({ reply }: { reply: Reply }) {
 
   const statusBadgeStatus = reply.status === "pending" ? "pending_review" : reply.status;
 
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(reply.author);
+  const displayName = isUuid || reply.author === "anonymous" ? "Anonymous Student" : reply.author;
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
@@ -128,7 +132,7 @@ function ReplyCard({ reply }: { reply: Reply }) {
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1 flex-wrap">
-            <span className="text-sm font-semibold">{reply.author}</span>
+            <span className="text-sm font-semibold">{displayName}</span>
             <span
               className={cn(
                 "text-xs px-1.5 py-0.5 rounded-full font-medium",
@@ -295,6 +299,7 @@ function BotReplyCard({ reply }: { reply: Reply }) {
 // ---------------------------------------------------------------------------
 
 function QuestionCard({ thread: initialThread }: { thread: Thread }) {
+  const { user } = useAuth();
   const [thread, setThread] = useState(initialThread);
   const [expanded, setExpanded] = useState(false);
   const [replyText, setReplyText] = useState("");
@@ -313,12 +318,21 @@ function QuestionCard({ thread: initialThread }: { thread: Thread }) {
     const content = replyText.trim();
     if (!content || submitting) return;
 
+    if (!user?.email) {
+      toast.error("Please sign in to post a reply.");
+      return;
+    }
+
     setSubmitting(true);
     try {
+      const studentId = localStorage.getItem("samagama_student_id") || "";
       const res = await fetch(`/api/community/questions/${thread.id}/answers`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ body: content }),
+        headers: {
+          "Content-Type": "application/json",
+          "x-student-id": studentId,
+        },
+        body: JSON.stringify({ body: content, email: user.email }),
       });
       const json = await res.json();
       if (!res.ok || !json.ok) {
@@ -326,10 +340,11 @@ function QuestionCard({ thread: initialThread }: { thread: Thread }) {
       }
 
       // Map answer→reply shape so the UI stays consistent.
-      const saved = json.answer as { id: string; author: string; authorRole: "user"; body: string; timestamp: string; likes: number; status: string };
+      const saved = json.answer as { id: string; author: string; authorEmail?: string; authorRole: "user"; body: string; timestamp: string; likes: number; status: string };
       const newReply: Reply = {
         id: saved.id,
         author: saved.author,
+        authorEmail: saved.authorEmail,
         authorRole: saved.authorRole,
         content: saved.body,
         timestamp: saved.timestamp,

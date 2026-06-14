@@ -52,6 +52,7 @@ export function serializeAnswer(
     body: a.body,
     status: a.status,
     authorStudentId: a.authorStudentId,
+    authorEmail: a.authorEmail,
     isMine: isOwner,
     voteScore: a.voteScore ?? 0,
     myVote: opts.myVote ?? 0,

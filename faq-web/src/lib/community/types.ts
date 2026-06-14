@@ -49,6 +49,7 @@ export interface AnswerDTO {
   body: string;
   status: AnswerStatus;
   authorStudentId: string;
+  authorEmail?: string;
   isMine: boolean;
   voteScore: number;
   myVote: number;

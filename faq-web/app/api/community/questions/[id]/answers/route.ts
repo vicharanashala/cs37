@@ -26,7 +26,7 @@ export async function POST(
     return errors.notFound("Question not found");
   }
 
-  let body: { body?: string };
+  let body: { body?: string; email?: string };
   try {
     body = await req.json();
   } catch {
@@ -39,7 +39,8 @@ export async function POST(
   }
 
   const student = getStudent(req);
-  const author = student?.studentId ?? "anonymous";
+  const authorEmail = typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
+  const author = authorEmail || student?.studentId || "anonymous";
 
   let client;
   try {
@@ -55,6 +56,7 @@ export async function POST(
     const reply = {
       id: new ObjectId().toHexString(),
       author,
+      authorEmail,
       authorRole: "user",
       content,
       timestamp: new Date().toISOString(),
