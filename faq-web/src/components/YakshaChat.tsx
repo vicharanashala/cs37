@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback, type ReactNode } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { MessageCircle, X, Send, Bot, User, Sparkles, Lightbulb, PlusCircle } from "lucide-react";
+import { MessageCircle, X, Send, Bot, User, Sparkles, Lightbulb, PlusCircle, ThumbsUp, ThumbsDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const RAG_BASE = process.env.NEXT_PUBLIC_RAG_API ?? "http://localhost:8000";
@@ -29,6 +29,8 @@ interface Message {
   sources?: string[];
   showSubmitPrompt?: boolean;
   submittedForFaq?: boolean;
+  feedback?: "up" | "down";
+  confidence?: number;
 }
 
 const MIN_W = 300, MAX_W = 700, MIN_H = 400, MAX_H = 800;
@@ -186,6 +188,7 @@ export default function YakshaChat() {
           (s) => `${s.title} (${s.section})`
         ),
         showSubmitPrompt,
+        confidence,
       };
       setMessages((prev) => [...prev, assistantMessage]);
       setRagStatus("online");
@@ -239,6 +242,39 @@ export default function YakshaChat() {
       }
     } catch {
       console.error("[YakshaChat] Failed to submit question for FAQ review");
+    }
+  };
+
+  const handleFeedback = async (msgId: string, type: "up" | "down") => {
+    const msgIndex = messages.findIndex((m) => m.id === msgId);
+    if (msgIndex === -1) return;
+    const assistantMsg = messages[msgIndex];
+    // Find the preceding user message to capture the exact question
+    const userMsg = messages
+      .slice(0, msgIndex)
+      .reverse()
+      .find((m) => m.role === "user");
+    if (!userMsg) return;
+
+    // Update UI state immediately
+    setMessages((prev) =>
+      prev.map((m) => (m.id === msgId ? { ...m, feedback: type } : m))
+    );
+
+    try {
+      await fetch("/api/chat-feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          question: userMsg.content,
+          answer: assistantMsg.content,
+          feedback: type,
+          sources: assistantMsg.sources || [],
+          confidence: assistantMsg.confidence || 0.0,
+        }),
+      });
+    } catch (err) {
+      console.error("[YakshaChat] Failed to submit feedback:", err);
     }
   };
 
@@ -360,6 +396,32 @@ export default function YakshaChat() {
                                 {s}
                               </p>
                             ))}
+                          </div>
+                        )}
+                        {msg.role === "assistant" && msg.id !== "welcome" && (
+                          <div className="flex items-center gap-2 mt-2 pt-2 border-t border-border/20 justify-end text-muted-foreground">
+                            <button
+                              onClick={() => handleFeedback(msg.id, "up")}
+                              disabled={msg.feedback !== undefined}
+                              className={cn(
+                                "p-1 rounded hover:bg-accent/10 transition-colors",
+                                msg.feedback === "up" && "text-success bg-success/15 hover:bg-success/20"
+                              )}
+                              title="Helpful"
+                            >
+                              <ThumbsUp size={14} className={msg.feedback === "up" ? "fill-success" : ""} />
+                            </button>
+                            <button
+                              onClick={() => handleFeedback(msg.id, "down")}
+                              disabled={msg.feedback !== undefined}
+                              className={cn(
+                                "p-1 rounded hover:bg-accent/10 transition-colors",
+                                msg.feedback === "down" && "text-danger bg-danger/15 hover:bg-danger/20"
+                              )}
+                              title="Not helpful"
+                            >
+                              <ThumbsDown size={14} className={msg.feedback === "down" ? "fill-danger" : ""} />
+                            </button>
                           </div>
                         )}
                       </div>
