@@ -28,6 +28,8 @@ import {
   PlusCircle,
   X,
   Tag,
+  ThumbsUp,
+  ThumbsDown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { categories } from "@/data/faqData";
@@ -53,26 +55,51 @@ export default function AdminPage() {
   const [answer, setAnswer] = useState("");
   const [filter, setFilter] = useState<"all" | "pending" | "urgent">("all");
   const [submitting, setSubmitting] = useState(false);
-  const [tab, setTab] = useState<"questions" | "faq_suggestions" | "manual_faq">("questions");
+  const [tab, setTab] = useState<"questions" | "faq_suggestions" | "manual_faq" | "chat_feedback">("questions");
   const [promoteModalOpen, setPromoteModalOpen] = useState(false);
   const [promoteCategoryId, setPromoteCategoryId] = useState(1);
   const [promoteTags, setPromoteTags] = useState("");
 
+  interface ChatFeedback {
+    id: string;
+    studentId: string;
+    question: string;
+    answer: string;
+    feedback: "up" | "down";
+    sources: string[];
+    confidence: number;
+    createdAt: string;
+  }
+  const [feedbacks, setFeedbacks] = useState<ChatFeedback[]>([]);
+
   const loadQuestions = useCallback(async () => {
     setLoading(true);
     try {
-      const srcParam = tab === "faq_suggestions" ? "&source=yaksha_chat" : "";
-      const res = await fetch(`/api/admin/pending-questions?status=all${srcParam}`, {
-        headers: { "x-admin-key": localStorage.getItem("samagama_admin_key") ?? "dev-admin" },
-      });
-      const data = await res.json();
-      if (data.ok) {
-        setQuestions(data.questions);
+      const adminKey = localStorage.getItem("samagama_admin_key") ?? "dev-admin";
+      if (tab === "chat_feedback") {
+        const res = await fetch("/api/admin/chat-feedback", {
+          headers: { "x-admin-key": adminKey },
+        });
+        const data = await res.json();
+        if (data.ok) {
+          setFeedbacks(data.feedback);
+        } else {
+          toast.error(data.error?.message ?? "Failed to load chat feedback");
+        }
       } else {
-        toast.error(data.error?.message ?? "Failed to load questions");
+        const srcParam = tab === "faq_suggestions" ? "&source=yaksha_chat" : "";
+        const res = await fetch(`/api/admin/pending-questions?status=all${srcParam}`, {
+          headers: { "x-admin-key": adminKey },
+        });
+        const data = await res.json();
+        if (data.ok) {
+          setQuestions(data.questions);
+        } else {
+          toast.error(data.error?.message ?? "Failed to load questions");
+        }
       }
     } catch {
-      toast.error("Network error — could not load questions");
+      toast.error("Network error — could not load data");
     } finally {
       setLoading(false);
     }
@@ -173,14 +200,33 @@ export default function AdminPage() {
     if (!answer.trim() || !selectedQuestion) return;
     setSubmitting(true);
     try {
+      const adminKey = localStorage.getItem("samagama_admin_key") ?? "dev-admin";
+      let targetQuestionId = selectedQuestion.id;
+
+      if (tab === "chat_feedback") {
+        // 1. Submit the feedback question to chat-suggestion to create a pending question doc
+        const resSubmit = await fetch("/api/chat-suggestion", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ question: selectedQuestion.question, category: "General" }),
+        });
+        const dataSubmit = await resSubmit.json();
+        if (!dataSubmit.ok) {
+          toast.error(dataSubmit.error?.message ?? "Failed to initialize FAQ suggestion");
+          setSubmitting(false);
+          return;
+        }
+        targetQuestionId = dataSubmit.questionId;
+      }
+
       const res = await fetch("/api/admin/pending-questions", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-admin-key": localStorage.getItem("samagama_admin_key") ?? "dev-admin",
+          "x-admin-key": adminKey,
         },
         body: JSON.stringify({
-          id: selectedQuestion.id,
+          id: targetQuestionId,
           action: "promote_faq",
           answer,
           promoteFaq: {
@@ -194,21 +240,44 @@ export default function AdminPage() {
       });
       const data = await res.json();
       if (data.ok) {
-        setQuestions((prev) =>
-          prev.map((q) => (q.id === selectedQuestion.id ? { ...q, status: "resolved" as const } : q))
-        );
-        toast.success(
-          <div className="flex flex-col gap-1">
-            <div className="flex items-center gap-2 font-semibold">
-              <BookText size={14} />
-              <span>FAQ created: {data.faqId}</span>
-            </div>
-            <p className="text-xs opacity-80">
-              Question promoted and published to FAQ
-            </p>
-          </div>,
-          { duration: 5000 }
-        );
+        if (tab === "chat_feedback") {
+          // Delete feedback from MongoDB
+          await fetch(`/api/admin/chat-feedback?id=${selectedQuestion.id}`, {
+            method: "DELETE",
+            headers: {
+              "x-admin-key": adminKey,
+            }
+          });
+          setFeedbacks((prev) => prev.filter((f) => f.id !== selectedQuestion.id));
+          toast.success(
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center gap-2 font-semibold">
+                <BookText size={14} />
+                <span>FAQ created: {data.faqId}</span>
+              </div>
+              <p className="text-xs opacity-80">
+                Chat feedback promoted and published to FAQ
+              </p>
+            </div>,
+            { duration: 5000 }
+          );
+        } else {
+          setQuestions((prev) =>
+            prev.map((q) => (q.id === selectedQuestion.id ? { ...q, status: "resolved" as const } : q))
+          );
+          toast.success(
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center gap-2 font-semibold">
+                <BookText size={14} />
+                <span>FAQ created: {data.faqId}</span>
+              </div>
+              <p className="text-xs opacity-80">
+                Question promoted and published to FAQ
+              </p>
+            </div>,
+            { duration: 5000 }
+          );
+        }
         setSelectedQuestion(null);
         setAnswer("");
         setPromoteModalOpen(false);
@@ -227,6 +296,30 @@ export default function AdminPage() {
     setPromoteCategoryId(1);
     setPromoteTags("");
     setPromoteModalOpen(true);
+  };
+
+  const handleDismissFeedback = async (id: string) => {
+    setSubmitting(true);
+    try {
+      const res = await fetch(`/api/admin/chat-feedback?id=${id}`, {
+        method: "DELETE",
+        headers: {
+          "x-admin-key": localStorage.getItem("samagama_admin_key") ?? "dev-admin",
+        },
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setFeedbacks((prev) => prev.filter((f) => f.id !== id));
+        toast.success("Feedback dismissed");
+        setSelectedQuestion(null);
+      } else {
+        toast.error(data.error?.message ?? "Failed to dismiss feedback");
+      }
+    } catch {
+      toast.error("Network error — could not dismiss feedback");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const pendingCount = questions.filter((q) => q.status === "pending").length;
@@ -302,6 +395,18 @@ export default function AdminPage() {
             <PlusCircle size={14} />
             Manual FAQ
           </button>
+          <button
+            onClick={() => { setTab("chat_feedback"); setSelectedQuestion(null); }}
+            className={cn(
+              "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all",
+              tab === "chat_feedback"
+                ? "bg-accent text-background"
+                : "text-muted hover:text-foreground"
+            )}
+          >
+            <Sparkles size={14} />
+            Chat Feedback
+          </button>
         </div>
 
         {/* Stats (questions tab only) */}
@@ -363,8 +468,77 @@ export default function AdminPage() {
           <div className="space-y-3">
             {loading ? (
               <div className="text-center py-16 text-muted text-sm">
-                Loading questions…
+                Loading...
               </div>
+            ) : tab === "chat_feedback" ? (
+              feedbacks.length === 0 ? (
+                <div className="text-center py-12">
+                  <CheckCircle size={48} className="text-success mx-auto mb-4 opacity-50" />
+                  <p className="text-muted">No chat feedback logged yet</p>
+                </div>
+              ) : (
+                feedbacks.map((f, idx) => (
+                  <motion.div
+                    key={f.id}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: idx * 0.05 }}
+                    onClick={() => {
+                      setSelectedQuestion({
+                        id: f.id,
+                        question: f.question,
+                        category: "Yaksha Chat Feedback",
+                        email: f.studentId,
+                        priority: "normal",
+                        status: "pending",
+                        answer: f.answer,
+                        suggestedAnswer: f.answer,
+                        submittedAt: f.createdAt,
+                        source: "yaksha_chat"
+                      });
+                      setAnswer(f.answer);
+                    }}
+                    className={cn(
+                      "rounded-xl border p-4 cursor-pointer transition-all",
+                      selectedQuestion?.id === f.id
+                        ? "border-accent bg-accent/5"
+                        : "border-border bg-card hover:border-muted",
+                      f.feedback === "down" ? "border-danger/30 hover:border-danger/50" : ""
+                    )}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-2 flex-wrap">
+                          <span className={cn(
+                            "text-[10px] px-2 py-0.5 rounded-full font-semibold flex items-center gap-1 uppercase tracking-wide",
+                            f.feedback === "up" ? "bg-success/20 text-success" : "bg-danger/20 text-danger"
+                          )}>
+                            {f.feedback === "up" ? <ThumbsUp size={10} /> : <ThumbsDown size={10} />}
+                            {f.feedback === "up" ? "Helpful" : "Unhelpful"}
+                          </span>
+                          <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-card border border-border text-muted">
+                            Confidence: {Math.round(f.confidence * 100)}%
+                          </span>
+                        </div>
+                        <p className="text-sm font-semibold leading-relaxed mb-1 text-foreground">
+                          {f.question}
+                        </p>
+                        <p className="text-xs text-muted leading-relaxed line-clamp-2 bg-background/50 p-2 rounded-lg border border-border/50">
+                          <span className="font-semibold text-[10px] uppercase text-muted mr-1">Bot Answer:</span>
+                          {f.answer}
+                        </p>
+                        <div className="flex items-center gap-3 mt-3 text-[10px] text-muted">
+                          <span>User: {f.studentId}</span>
+                          <span>&middot;</span>
+                          <span>
+                            {new Date(f.createdAt).toLocaleString()}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </motion.div>
+                ))
+              )
             ) : filteredQuestions.length === 0 ? (
               <div className="text-center py-12">
                 <CheckCircle size={48} className="text-success mx-auto mb-4 opacity-50" />
@@ -485,7 +659,7 @@ export default function AdminPage() {
                 {tab === "faq_suggestions" ? (
                   <div className="flex gap-2">
                     <button
-                      onClick={handlePromoteToFaq}
+                      onClick={openPromoteModal}
                       disabled={!answer.trim() || submitting}
                       className={cn(
                         "flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-medium transition-all",
@@ -495,7 +669,7 @@ export default function AdminPage() {
                       )}
                     >
                       <PlusCircle size={14} />
-                      {submitting ? "Promoting…" : "Promote to FAQ"}
+                      Promote to FAQ
                     </button>
                     <button
                       onClick={() => handleReject(selectedQuestion.id)}
@@ -504,6 +678,30 @@ export default function AdminPage() {
                     >
                       <Trash2 size={14} />
                       Reject
+                    </button>
+                  </div>
+                ) : tab === "chat_feedback" ? (
+                  <div className="flex gap-2">
+                    <button
+                      onClick={openPromoteModal}
+                      disabled={!answer.trim() || submitting}
+                      className={cn(
+                        "flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-medium transition-all",
+                        answer.trim() && !submitting
+                          ? "bg-accent text-background hover:bg-accent-hover"
+                          : "bg-card border border-border text-muted cursor-not-allowed"
+                      )}
+                    >
+                      <PlusCircle size={14} />
+                      Promote to FAQ
+                    </button>
+                    <button
+                      onClick={() => handleDismissFeedback(selectedQuestion.id)}
+                      disabled={submitting}
+                      className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border border-border text-muted hover:bg-background transition-all disabled:opacity-50"
+                    >
+                      <X size={14} />
+                      Dismiss
                     </button>
                   </div>
                 ) : (
@@ -540,7 +738,7 @@ export default function AdminPage() {
               >
                 <MessageSquare size={48} className="text-muted mx-auto mb-4 opacity-30" />
                 <p className="text-sm text-muted">
-                  Select a question to {tab === "faq_suggestions" ? "promote" : "answer"}
+                  Select a question to {tab === "faq_suggestions" || tab === "chat_feedback" ? "promote" : "answer"}
                 </p>
               </motion.div>
             )}

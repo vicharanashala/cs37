@@ -75,7 +75,7 @@ app_state: dict = {}
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Load Gemini client and ChromaDB collection once on startup."""
+    """Load Gemini client, ChromaDB collections, and sync published FAQs once on startup."""
     if not GEMINI_API_KEY:
         raise EnvironmentError("GEMINI_API_KEY not set in .env")
 
@@ -89,14 +89,80 @@ async def lifespan(app: FastAPI):
     count = app_state["collection"].count()
     print(f"[OK] ChromaDB loaded - {count} chunks in '{COLLECTION_NAME}'")
 
-    # MongoDB is only needed to write back /validate-question verdicts. If the
-    # URI is missing we still serve every other endpoint (fail-open on writeback).
+    # Load faq_questions collection
+    app_state["faq_collection"] = (
+        chromadb.PersistentClient(
+            path     = CHROMA_PATH,
+            settings = Settings(anonymized_telemetry=False),
+        ).get_or_create_collection("faq_questions", metadata={"hnsw:space": "cosine"})
+    )
+
+    # MongoDB setup & FAQ synchronization
     if MONGODB_URI:
         app_state["mongo"] = MongoClient(MONGODB_URI)
         print("[OK] MongoDB client connected")
+        try:
+            db = app_state["mongo"]["samagama"]
+            faqs = list(db["faqs"].find({"isPublished": True}))
+            
+            # Cache FAQs in-memory for exact matches
+            faq_exact_map = {}
+            for f in faqs:
+                norm_q = normalize_text(f["question"])
+                faq_exact_map[norm_q] = f
+            app_state["faq_exact_map"] = faq_exact_map
+            print(f"[OK] Cached {len(faq_exact_map)} published FAQs for exact matching.")
+            
+            # Sync with ChromaDB for semantic matching
+            chroma_count = app_state["faq_collection"].count()
+            if chroma_count != len(faqs):
+                print("[INFO] Synchronizing ChromaDB 'faq_questions' collection...")
+                if chroma_count > 0:
+                    try:
+                        all_ids = app_state["faq_collection"].get()["ids"]
+                        app_state["faq_collection"].delete(ids=all_ids)
+                    except Exception as e:
+                        print(f"[WARN] Failed to clear collection: {e}")
+                
+                if faqs:
+                    faq_questions_list = [f["question"] for f in faqs]
+                    faq_ids = [str(f["_id"]) for f in faqs]
+                    
+                    # Embed in batches of 10
+                    embeddings = []
+                    for i in range(0, len(faq_questions_list), 10):
+                        batch = faq_questions_list[i : i + 10]
+                        resp = app_state["gemini"].models.embed_content(
+                            model    = f"models/{EMBEDDING_MODEL}",
+                            contents = batch,
+                            config   = types.EmbedContentConfig(task_type="RETRIEVAL_DOCUMENT"),
+                        )
+                        embeddings.extend([e.values for e in resp.embeddings])
+                    
+                    app_state["faq_collection"].upsert(
+                        ids        = faq_ids,
+                        embeddings = embeddings,
+                        documents  = faq_questions_list,
+                        metadatas  = [
+                            {
+                                "faq_id":   str(f.get("id", "")),
+                                "question": str(f.get("question", "")),
+                                "answer":   str(f.get("answer", "")),
+                                "category": str(f.get("category", "")),
+                            }
+                            for f in faqs
+                        ]
+                    )
+                print(f"[OK] ChromaDB 'faq_questions' synchronized ({len(faqs)} items).")
+            else:
+                print(f"[OK] ChromaDB 'faq_questions' is up to date ({chroma_count} items).")
+        except Exception as err:
+            print(f"[WARN] Failed to synchronize published FAQs: {err}")
+            app_state["faq_exact_map"] = {}
     else:
         app_state["mongo"] = None
-        print("[WARN] MONGODB_URI not set - /validate-question writeback disabled")
+        app_state["faq_exact_map"] = {}
+        print("[WARN] MONGODB_URI not set - FAQ duplicate detection disabled")
 
     yield
 
@@ -203,6 +269,32 @@ class GenerateAnswerResponse(BaseModel):
     model:   str
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
+def normalize_text(text: str) -> str:
+    """Normalize user question to enable high-quality exact matching."""
+    text = text.lower().strip()
+    # Replace common contractions
+    contractions = {
+        "what's": "what is",
+        "it's": "it is",
+        "that's": "that is",
+        "how's": "how is",
+        "when's": "when is",
+        "where's": "where is",
+        "can't": "cannot",
+        "don't": "do not",
+        "doesn't": "does not",
+        "won't": "will not",
+        "i'm": "i am",
+        "you're": "you are",
+    }
+    for contraction, expanded in contractions.items():
+        text = text.replace(contraction, expanded)
+    # Remove leading/trailing punctuation, but keep spaces and words
+    text = re.sub(r"^[^\w\s]+|[^\w\s]+$", "", text)
+    # Remove repeated spaces
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
 
 def embed_query(question: str) -> list[float]:
     """Embed a user question using RETRIEVAL_QUERY task type."""
@@ -523,17 +615,68 @@ def health():
 @app.post("/query", response_model=QueryResponse)
 def rag_query(req: QueryRequest):
     """
-    Full RAG pipeline:
-      1. Embed the question
-      2. Retrieve top_k relevant chunks from ChromaDB
-      3. Build a prompt with the chunks as context
-      4. Generate an answer with Gemini
-      5. Return answer + source citations
+    Full RAG pipeline with duplicate FAQ check layer:
+      1. Normalize and check exact match in cache
+      2. If exact match fails, check semantic match in ChromaDB (faq_questions)
+      3. If match is above threshold (similarity >= 0.88), return canonical answer
+      4. Otherwise, retrieve top_k relevant chunks from ChromaDB, build prompt, and generate answer
     """
     if not req.question.strip():
         raise HTTPException(status_code=400, detail="Question cannot be empty")
 
-    # Retrieve
+    # 1. Exact Match Cache Check
+    norm_q = normalize_text(req.question)
+    faq_exact_map = app_state.get("faq_exact_map", {})
+    if norm_q in faq_exact_map:
+        matched_faq = faq_exact_map[norm_q]
+        print(f"[OK] Exact duplicate match: '{req.question}' -> FAQ {matched_faq['id']}")
+        return QueryResponse(
+            answer     = matched_faq["answer"],
+            sources    = [
+                SourceDoc(
+                    title   = f"FAQ {matched_faq['id']}: {matched_faq['question']}",
+                    section = matched_faq.get("category", "General"),
+                    url     = f"/faq#q-{matched_faq['id']}",
+                    score   = 1.0,
+                    snippet = matched_faq["answer"][:200] + "...",
+                )
+            ],
+            confidence = 1.0,
+        )
+
+    # 2. Semantic Duplicate Check (faq_questions)
+    faq_collection = app_state.get("faq_collection")
+    if faq_collection is not None and faq_collection.count() > 0:
+        try:
+            q_vec = embed_query(req.question)
+            results = faq_collection.query(
+                query_embeddings = [q_vec],
+                n_results        = 1,
+                include          = ["documents", "metadatas", "distances"],
+            )
+            if results and results["distances"] and len(results["distances"][0]) > 0:
+                dist = results["distances"][0][0]
+                similarity = round(1 - dist, 4)
+                if similarity >= 0.88:
+                    meta = results["metadatas"][0][0]
+                    print(f"[OK] Semantic duplicate match (score={similarity}): '{req.question}' -> FAQ {meta['faq_id']}")
+                    return QueryResponse(
+                        answer     = meta["answer"],
+                        sources    = [
+                            SourceDoc(
+                                title   = f"FAQ {meta['faq_id']}: {meta['question']}",
+                                section = meta.get("category", "General"),
+                                url     = f"/faq#q-{meta['faq_id']}",
+                                score   = similarity,
+                                snippet = meta["answer"][:200] + "...",
+                            )
+                        ],
+                        confidence = similarity,
+                    )
+        except Exception as err:
+            print(f"[WARN] Semantic duplicate check failed: {err}")
+
+    # 3. Fallback to standard RAG pipeline
     chunks = retrieve(req.question, req.top_k)
 
     if not chunks:
