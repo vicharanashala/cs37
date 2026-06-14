@@ -271,7 +271,7 @@ export default function ProfilePage() {
             {/* Quick actions */}
             <div className="shrink-0 flex flex-col gap-2">
               <Link
-                href="/community/ask"
+                href="/ask"
                 className="text-xs px-3 py-1.5 rounded-lg bg-accent text-background font-medium hover:bg-accent/90 transition-colors"
               >
                 Ask a question
@@ -352,7 +352,7 @@ export default function ProfilePage() {
                 icon={HelpCircle}
                 title="No questions yet"
                 message="Head over to the community and ask your first question."
-                cta={{ label: "Ask a question", href: "/community/ask" }}
+                cta={{ label: "Ask a question", href: "/ask" }}
               />
             ) : (
               <div className="space-y-3">

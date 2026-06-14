@@ -300,6 +300,74 @@ def do_web_search(question: str, top_k: int = 3) -> list[dict]:
         return []
 
 
+STOP_WORDS = {
+    "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
+    "have", "has", "had", "do", "does", "did", "will", "would", "could",
+    "should", "may", "might", "shall", "can", "need", "dare", "ought",
+    "used", "to", "of", "in", "for", "on", "with", "at", "by", "from",
+    "as", "into", "through", "during", "before", "after", "above", "below",
+    "between", "out", "off", "over", "under", "again", "further", "then",
+    "once", "here", "there", "when", "where", "why", "how", "all", "both",
+    "each", "few", "more", "most", "other", "some", "such", "no", "nor",
+    "not", "only", "own", "same", "so", "than", "too", "very", "just",
+    "don", "now", "what", "which", "who", "whom", "this", "that", "these",
+    "those", "i", "me", "my", "we", "our", "you", "your", "he", "him",
+    "his", "she", "her", "it", "its", "they", "them", "their", "about",
+}
+
+
+def search_mongo_faqs(question: str, top_k: int = 5) -> list[dict]:
+    """
+    Search the MongoDB 'faqs' collection for published FAQs matching the question.
+    Uses keyword overlap scoring with stop-word filtering for better relevance.
+    Returns chunks in the same shape as ChromaDB results so they can be merged.
+    """
+    mongo = app_state.get("mongo")
+    if mongo is None:
+        return []
+
+    try:
+        db = mongo[os.getenv("MONGODB_DB", "samagama")]
+        faqs = list(db["faqs"].find(
+            {"isPublished": True},
+            {"question": 1, "answer": 1, "category": 1}
+        ))
+    except Exception as err:
+        print(f"[WARN] MongoDB FAQ search failed: {err}")
+        return []
+
+    if not faqs:
+        return []
+
+    # Filter stop words from query
+    q_words = set(question.lower().split()) - STOP_WORDS
+    if not q_words:
+        return []
+
+    scored = []
+    for faq in faqs:
+        q_text = (faq.get("question", "") + " " + faq.get("answer", "")).lower()
+        faq_words = set(q_text.split()) - STOP_WORDS
+        if not faq_words:
+            continue
+        overlap = len(q_words & faq_words)
+        if overlap == 0:
+            continue
+        # Score: ratio of matched meaningful words to query words
+        score = overlap / max(len(q_words), 1)
+        if score >= 0.3:  # at least 30% of query words match
+            scored.append({
+                "content": faq.get("answer", ""),
+                "title":   faq.get("question", ""),
+                "section": faq.get("category", "FAQ"),
+                "url":     f"/faq/{faq.get('_id', '')}",
+                "score":   round(min(score, 0.95), 4),
+            })
+
+    scored.sort(key=lambda x: x["score"], reverse=True)
+    return scored[:top_k]
+
+
 def build_answer_prompt(question: str, rag_chunks: list[dict], web_results: list[dict]) -> str:
     """
     Build the answer-generation prompt that merges RAG context and web results.
@@ -526,17 +594,35 @@ def rag_query(req: QueryRequest):
     Full RAG pipeline:
       1. Embed the question
       2. Retrieve top_k relevant chunks from ChromaDB
-      3. Build a prompt with the chunks as context
-      4. Generate an answer with Gemini
-      5. Return answer + source citations
+      3. Also search MongoDB published FAQs
+      4. Merge and deduplicate results
+      5. Build a prompt with the chunks as context
+      6. Generate an answer with Gemini
+      7. Return answer + source citations
     """
     if not req.question.strip():
         raise HTTPException(status_code=400, detail="Question cannot be empty")
 
-    # Retrieve
+    # Retrieve from ChromaDB
     chunks = retrieve(req.question, req.top_k)
 
-    if not chunks:
+    # Also search MongoDB FAQs
+    mongo_faqs = search_mongo_faqs(req.question, top_k=3)
+
+    # Merge: MongoDB FAQs first (they're admin-curated, higher priority),
+    # then ChromaDB chunks, deduplicating by title
+    seen_titles = set()
+    merged = []
+    for faq in mongo_faqs:
+        if faq["title"] not in seen_titles:
+            seen_titles.add(faq["title"])
+            merged.append(faq)
+    for chunk in chunks:
+        if chunk["title"] not in seen_titles:
+            seen_titles.add(chunk["title"])
+            merged.append(chunk)
+
+    if not merged:
         return QueryResponse(
             answer     = "No relevant information found in the knowledge base.",
             sources    = [],
@@ -544,14 +630,13 @@ def rag_query(req: QueryRequest):
         )
 
     # Generate
-    prompt = build_prompt(req.question, chunks)
+    prompt = build_prompt(req.question, merged)
     answer = generate_answer(prompt)
 
     # Build source citations
-    # Deduplicate by URL (multiple chunks can come from same doc)
     seen_urls = set()
     sources   = []
-    for chunk in chunks:
+    for chunk in merged:
         if chunk["url"] not in seen_urls:
             seen_urls.add(chunk["url"])
             sources.append(SourceDoc(
@@ -562,7 +647,7 @@ def rag_query(req: QueryRequest):
                 snippet = chunk["content"][:200] + "...",
             ))
 
-    avg_confidence = round(sum(c["score"] for c in chunks) / len(chunks), 4)
+    avg_confidence = round(sum(c["score"] for c in merged) / len(merged), 4)
     return QueryResponse(answer=answer, sources=sources, confidence=avg_confidence)
 
 
@@ -631,7 +716,7 @@ def validate_question(req: QuestionValidationRequest):
 def generate_bot_answer(req: GenerateAnswerRequest):
     """
     Generate an AI helper answer for a community forum question using
-    dual knowledge sources: institutional RAG corpus + real-time web search.
+    dual knowledge sources: institutional RAG corpus + MongoDB FAQs + real-time web search.
 
     Used by the Next.js backend to auto-generate a pinned bot answer for
     every new question in the community forum.
@@ -640,16 +725,29 @@ def generate_bot_answer(req: GenerateAnswerRequest):
     if not text:
         raise HTTPException(status_code=400, detail="Question text cannot be empty")
 
-    rag_chunks  = retrieve(text, top_k=TOP_K)
-    web_results = do_web_search(text, top_k=3)
+    rag_chunks   = retrieve(text, top_k=TOP_K)
+    mongo_faqs   = search_mongo_faqs(text, top_k=3)
+    web_results  = do_web_search(text, top_k=3)
 
-    prompt      = build_answer_prompt(text, rag_chunks, web_results)
+    # Merge MongoDB FAQs into rag_chunks (FAQs take priority)
+    seen_titles = set()
+    merged_rag = []
+    for faq in mongo_faqs:
+        if faq["title"] not in seen_titles:
+            seen_titles.add(faq["title"])
+            merged_rag.append(faq)
+    for chunk in rag_chunks:
+        if chunk["title"] not in seen_titles:
+            seen_titles.add(chunk["title"])
+            merged_rag.append(chunk)
+
+    prompt      = build_answer_prompt(text, merged_rag, web_results)
     answer_text = generate_answer(prompt)
 
     sources: list[AnswerSource] = []
     seen_urls: set[str] = set()
 
-    for chunk in rag_chunks:
+    for chunk in merged_rag:
         if chunk["url"] not in seen_urls:
             seen_urls.add(chunk["url"])
             sources.append(AnswerSource(
