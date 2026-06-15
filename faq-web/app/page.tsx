@@ -12,13 +12,18 @@ import YakshaChat from "@/components/YakshaChat";
 import { useAuth } from "@/context/AuthContext";
 import type { FAQ, Category } from "@/data/faqData";
 import { BookOpen, TrendingUp, Users, Loader2 } from "lucide-react";
+import { supportedLanguages, translateFaqs } from "@/lib/translateService";
 
 export default function FAQPage() {
   const router = useRouter();
   const { token, loading: authLoading } = useAuth();
   const [faqData, setFaqData] = useState<FAQ[]>([]);
+  const [rawFaqData, setRawFaqData] = useState<FAQ[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
+  const [translationLoading, setTranslationLoading] = useState(false);
+  const [translationError, setTranslationError] = useState<string | null>(null);
+  const [language, setLanguage] = useState("en");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() =>  {
@@ -35,6 +40,7 @@ export default function FAQPage() {
           console.log("database data", data);
           if (data.ok) {
             setFaqData(data.faqs);
+            setRawFaqData(data.faqs);
             setCategories(data.categories);
           } else {
             throw setError("Failed to load FAQs");
@@ -47,6 +53,43 @@ export default function FAQPage() {
       };
       load();
     }, []);
+
+    useEffect(() => {
+      if (language === "en" || rawFaqData.length === 0) {
+        setFaqData(rawFaqData);
+        setTranslationError(null);
+        return;
+      }
+
+      let isActive = true;
+
+      const translate = async () => {
+        setTranslationLoading(true);
+        setTranslationError(null);
+        try {
+          const translated = await translateFaqs(rawFaqData, language);
+          if (isActive) {
+            setFaqData(translated);
+          }
+        } catch (err) {
+          console.error("Translation failed", err);
+          if (isActive) {
+            setTranslationError("Could not translate FAQs. Showing English content.");
+            setFaqData(rawFaqData);
+          }
+        } finally {
+          if (isActive) {
+            setTranslationLoading(false);
+          }
+        }
+      };
+
+      void translate();
+
+      return () => {
+        isActive = false;
+      };
+    }, [language, rawFaqData]);
 
     const liveFuse = useMemo(
       () =>
@@ -190,9 +233,37 @@ export default function FAQPage() {
                     <Users size={16} className="text-accent" />
                     <span>600+ interns</span>
                   </div>
+                  <div className="flex items-center gap-2 text-sm text-muted">
+                    <label htmlFor="language" className="text-xs uppercase tracking-[0.2em]">
+                      Language
+                    </label>
+                    <select
+                      id="language"
+                      value={language}
+                      onChange={(event) => setLanguage(event.target.value)}
+                      className="rounded-lg border border-border bg-background px-3 py-1 text-xs text-foreground outline-none focus:border-accent"
+                    >
+                      {supportedLanguages.map((lang) => (
+                        <option key={lang.code} value={lang.code}>
+                          {lang.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </motion.div>
               </div>
             </section>
+
+            {translationLoading && (
+              <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-4 text-sm text-muted bg-accent/5 rounded-2xl border border-accent/10">
+                Translating FAQs into {supportedLanguages.find((l) => l.code === language)?.label}...
+              </div>
+            )}
+            {translationError && (
+              <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-4 text-sm text-danger bg-danger/10 rounded-2xl border border-danger/20">
+                {translationError}
+              </div>
+            )}
 
             {/* Main Content */}
             <main className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8 py-8">
