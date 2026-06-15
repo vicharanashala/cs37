@@ -30,6 +30,7 @@ const DB_NAME = process.env.MONGODB_DB ?? "samagama";
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
   const categoryId = sp.get("categoryId");
+  const admin = sp.get("admin") === "true";
 
   let client;
   try {
@@ -41,8 +42,9 @@ export async function GET(req: NextRequest) {
   try {
     const db = client.db(DB_NAME);
 
-    // Build filter — only return published FAQs
-    const faqFilter: Record<string, unknown> = { isPublished: { $ne: false } };
+    // Build filter — admin mode returns all FAQs, public mode returns only published
+    const faqFilter: Record<string, unknown> = {};
+    if (!admin) faqFilter.isPublished = { $ne: false };
     if (categoryId) faqFilter.categoryId = Number(categoryId);
 
     const [faqs, categories] = await Promise.all([
@@ -62,9 +64,12 @@ export async function GET(req: NextRequest) {
         category: f.category as string,
         categoryId: f.categoryId as number,
         tags: (f.tags as string[]) ?? [],
+        keywords: (f.keywords as string[]) ?? [],
         helpful: (f.helpful as number) ?? 0,
         notHelpful: (f.notHelpful as number) ?? 0,
         lastUpdated: f.lastUpdated as string,
+        isPublished: (f.isPublished as boolean) ?? true,
+        version: (f.version as number) ?? 1,
       })),
       categories: categories.map((c) => ({
         id: c.id as number,

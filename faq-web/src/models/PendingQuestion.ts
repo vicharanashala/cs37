@@ -51,6 +51,7 @@ export interface ReplySource {
 export interface Reply {
   id: string;
   author: string;
+  authorEmail?: string;
   /** "bot" is the AI helper answer — rendered like a reply but styled apart. */
   authorRole: "admin" | "user" | "mentor" | "bot";
   content: string;
@@ -125,6 +126,7 @@ const ReplySchema = new Schema<Reply>(
   {
     id:         { type: String, required: true },
     author:     { type: String, default: "Anonymous Student" },
+    authorEmail: { type: String, default: "" },
     authorRole: { type: String, enum: ["admin", "user", "mentor", "bot"], default: "user" },
     content:    { type: String, required: true },
     timestamp:  { type: String, required: true },

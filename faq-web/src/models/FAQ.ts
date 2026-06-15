@@ -29,6 +29,7 @@ export interface IFAQ extends Document {
   /** Numeric foreign key matching Category.id */
   categoryId: number;
   tags: string[];
+  keywords: string[];
   helpful: number;
   notHelpful: number;
   /** ISO date string, e.g. "2026-05-24" */
@@ -73,6 +74,10 @@ const FAQSchema = new Schema<IFAQ>(
       index: true,
     },
     tags: {
+      type: [String],
+      default: [],
+    },
+    keywords: {
       type: [String],
       default: [],
     },

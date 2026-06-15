@@ -61,6 +61,7 @@ export async function GET(req: NextRequest) {
         .map((r) => ({
           id: r.id,
           author: r.author,
+          authorEmail: r.authorEmail,
           authorRole: r.authorRole,
           content: r.content,
           timestamp: r.timestamp,

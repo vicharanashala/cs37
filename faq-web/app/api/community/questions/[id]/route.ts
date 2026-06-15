@@ -95,6 +95,7 @@ export async function GET(
       body: r.content,
       status: r.status ?? "approved",
       authorStudentId: r.author,
+      authorEmail: r.authorEmail,
       isMine: !!student && r.author === student.studentId,
       voteScore: r.likes ?? 0,
       myVote: 0,

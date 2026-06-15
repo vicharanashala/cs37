@@ -34,6 +34,7 @@ export interface ReplySource {
 export interface Reply {
   id: string;
   author: string;
+  authorEmail?: string;
   /** "bot" is the AI helper answer — rendered like a reply but styled apart. */
   authorRole: "admin" | "user" | "mentor" | "bot";
   content: string;

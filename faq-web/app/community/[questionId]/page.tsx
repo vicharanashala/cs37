@@ -36,6 +36,7 @@ import Header from "@/components/Header";
 import StatusBadge from "@/components/community/StatusBadge";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/community/client";
+import { useAuth } from "@/context/AuthContext";
 import type {
   AnswerDTO,
   Capabilities,
@@ -91,6 +92,7 @@ const mdComponents: React.ComponentProps<typeof Markdown>["components"] = {
 export default function QuestionDetailPage() {
   const params = useParams<{ questionId: string }>();
   const questionId = params.questionId;
+  const { user } = useAuth();
 
   const [question, setQuestion] = useState<QuestionDTO | null>(null);
   const [answers, setAnswers] = useState<AnswerDTO[]>([]);
@@ -163,11 +165,15 @@ export default function QuestionDetailPage() {
       setSubmitMsg("Answer must be at least 15 characters.");
       return;
     }
+    if (!user?.email) {
+      setSubmitMsg("Please sign in to submit an answer.");
+      return;
+    }
     setSubmitting(true);
     setSubmitMsg("");
     const res = await api(`/api/community/questions/${questionId}/answers`, {
       method: "POST",
-      body: JSON.stringify({ body: answerBody.trim() }),
+      body: JSON.stringify({ body: answerBody.trim(), email: user.email }),
     });
     setSubmitting(false);
     if (res.ok) {
@@ -699,6 +705,13 @@ function AnswerCard({
 
         {/* Body */}
         <div className="min-w-0 flex-1">
+          {(() => {
+            const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(answer.authorStudentId);
+            const displayAuthor = isUuid || answer.authorStudentId === "anonymous" ? null : answer.authorStudentId;
+            return displayAuthor ? (
+              <p className="text-xs text-muted mb-2">By {displayAuthor}</p>
+            ) : null;
+          })()}
           <Markdown remarkPlugins={[remarkGfm]} components={mdComponents}>
             {answer.body}
           </Markdown>

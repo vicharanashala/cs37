@@ -1,18 +1,15 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { useState, useEffect } from "react";
+import { motion } from "framer-motion";
 import Header from "@/components/Header";
 import YakshaChat from "@/components/YakshaChat";
 import type { FAQ, Category } from "@/data/faqData";
-import Fuse from "fuse.js";
 import FAQSuggestionBox from "@/components/FAQSuggestionBox";
 import {
   Send,
-  Lightbulb,
   CheckCircle,
   AlertCircle,
-  ArrowRight,
   Mail,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -43,22 +40,6 @@ export default function AskPage() {
     };
     void load();
   }, []);
-
-  const fuse = useMemo(
-    () =>
-      new Fuse(faqData, {
-        keys: ["question", "answer", "tags"],
-        threshold: 0.4,
-        includeScore: true,
-      }),
-    [faqData]
-  );
-
-  // Real-time duplicate detection
-  const suggestions = useMemo(() => {
-    if (question.length < 5) return [];
-    return fuse.search(question).slice(0, 3);
-  }, [question, fuse]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -185,49 +166,6 @@ export default function AskPage() {
                 required
               />
             </div>
-
-            {/* Smart Suggestions */}
-            <AnimatePresence>
-              {suggestions.length > 0 && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: "auto" }}
-                  exit={{ opacity: 0, height: 0 }}
-                  className="rounded-xl border border-accent/30 bg-accent/5 p-4"
-                >
-                  <div className="flex items-center gap-2 mb-3">
-                    <Lightbulb size={16} className="text-accent" />
-                    <span className="text-sm font-medium text-accent">
-                      Similar questions already answered:
-                    </span>
-                  </div>
-                  <div className="space-y-2">
-                    {suggestions.map((s) => (
-                      <a
-                        key={s.item.id}
-                        href={`/#faq-${s.item.id}`}
-                        className="flex items-center gap-2 p-2.5 rounded-lg bg-background/50 hover:bg-background border border-border/50 transition-all group"
-                      >
-                        <span className="text-xs font-mono text-accent">
-                          {s.item.id}
-                        </span>
-                        <span className="flex-1 text-sm text-foreground/80 group-hover:text-foreground">
-                          {s.item.question}
-                        </span>
-                        <ArrowRight
-                          size={14}
-                          className="text-muted group-hover:text-accent transition-colors"
-                        />
-                      </a>
-                    ))}
-                  </div>
-                  <p className="text-xs text-muted mt-3">
-                    If none of these answer your question, continue submitting
-                    below.
-                  </p>
-                </motion.div>
-              )}
-            </AnimatePresence>
 
             {/* Category */}
             <div>

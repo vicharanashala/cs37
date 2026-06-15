@@ -91,7 +91,7 @@ export async function POST(req: NextRequest) {
   const client = await ConnectDB();
   const db = client.db(DB_NAME);
 
-  const resolvedAnswer = (answer as string).trim();
+  const resolvedAnswer = (answer ?? "").trim();
 
   if (action === "promote_faq") {
     const pendingDoc = await db
